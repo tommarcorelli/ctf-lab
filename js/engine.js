@@ -1505,20 +1505,44 @@ function cmdCurl(args) {
     return out(machine.sqli.failBody);
   }
 
-  if (machine.altAccess && u.path === machine.altAccess.triggerPath) {
-    if (SESSION.listening !== machine.altAccess.port) {
-      return out(
-        "(la requête part bien, mais rien ne revient — assure-toi d'être en écoute avec " +
-          `\`nc -lvnp ${machine.altAccess.port}\` avant de la déclencher)`,
-        "t-err",
+  if (machine.altAccess) {
+    const aa = machine.altAccess;
+    const qIdx = u.path.indexOf("?");
+    const basePath = qIdx >= 0 ? u.path.slice(0, qIdx) : u.path;
+    const query = qIdx >= 0 ? u.path.slice(qIdx + 1) : "";
+    if (basePath === aa.path && aa.injectRegex.test(query)) {
+      // Injection de commande détectée sur l'endpoint vulnérable. L'IP et le port du
+      // callback sont parsés depuis le payload du joueur (variables, plus câblés en dur) :
+      // c'est ce qui rend le mécanisme réutilisable par n'importe quelle machine.
+      const cb = query.match(/nc\s+(\d+\.\d+\.\d+\.\d+)\s+(\d+)/);
+      if (!cb) {
+        return out(
+          "(injection de commande acceptée, mais aucune cible `nc <ip> <port>` reconnue dans le payload)",
+          "t-err",
+        );
+      }
+      const cbIp = cb[1];
+      const cbPort = parseInt(cb[2], 10);
+      if (cbIp !== ATTACKER_IP) {
+        return out(
+          `(le callback vise ${cbIp}, or ton IP d'attaquant est ${ATTACKER_IP} — corrige l'adresse dans le payload)`,
+          "t-err",
+        );
+      }
+      if (SESSION.listening !== cbPort) {
+        return out(
+          "(la requête part bien, mais rien ne revient — mets-toi d'abord en écoute avec " +
+            `\`nc -lvnp ${cbPort}\` sur le même port que celui visé par ton payload)`,
+          "t-err",
+        );
+      }
+      SESSION.listening = null;
+      return grantAccess(
+        machine,
+        aa.user,
+        `Connexion entrante reçue sur le port ${cbPort} depuis ${machine.ip} !\n`,
       );
     }
-    SESSION.listening = null;
-    return grantAccess(
-      machine,
-      machine.altAccess.user,
-      `Connexion entrante reçue sur le port ${machine.altAccess.port} depuis ${machine.ip} !\n`,
-    );
   }
 
   const content = machine.web[u.path];

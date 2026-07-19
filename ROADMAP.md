@@ -20,17 +20,18 @@ reverse shell manuel sur MERIDIAN, `validateMachines` en garde-fou de schéma) :
 1. **Machines en pivot** (Phase 2) — chaînage multi-hop, forte valeur pédagogique. Le
    garde-fou de schéma (`validateMachines`) est déjà en place pour sécuriser l'ajout d'une
    machine supplémentaire de ce type.
-2. **`nc`/reverse shell généralisé** (Phase 2) — sortir le cas MERIDIAN (IP/port fixes) vers
-   un vrai schéma `altAccess` réutilisable par n'importe quelle machine, avec des valeurs
-   variables plutôt que câblées en dur.
-3. **Extraction JSON pure des machines** (Phase 3) — le schéma de validation existe déjà ;
+2. **Extraction JSON pure des machines** (Phase 3) — le schéma de validation existe déjà ;
    il reste à sérialiser proprement les champs regex du privesc pour sortir `machines.js`
    en fichier `.json` séparé.
-4. **`vrai parser shell`** (Phase 3) — dette technique qui limite déjà certains scénarios
+3. **`vrai parser shell`** (Phase 3) — dette technique qui limite déjà certains scénarios
    (pas de citations imbriquées, pas de `$(...)`) ; utile avant d'enrichir encore les
    familles de vulnérabilités web.
-5. **i18n FR/EN** (Phase 3) — gros chantier transverse, à faire une fois le contenu FR
+4. **i18n FR/EN** (Phase 3) — gros chantier transverse, à faire une fois le contenu FR
    stabilisé (sinon double la charge de maintenance à chaque nouvelle machine).
+
+> ✅ Livré depuis la dernière revue : **`nc`/reverse shell généralisé** — le schéma
+> `machine.altAccess` (`{ path, injectRegex, user }`) parse l'IP/port du callback depuis le
+> payload et est désormais réutilisé sur MERIDIAN **et** PHANTOM (voir Phase 2).
 
 ---
 
@@ -118,10 +119,17 @@ reverse shell manuel sur MERIDIAN, `validateMachines` en garde-fou de schéma) :
       prouve le concept sans backend ni vrai socket. Testé dans `tests/run.js` (refus sans
       écoute, refus sur le mauvais port, accès + crédit du score une seule fois même en
       repassant par ssh ensuite).
-- [ ] **`nc`/reverse shell généralisé** *(reste ouvert)* — étendre le mécanisme livré
-      ci-dessus à d'autres machines (IP/port variables au lieu de valeurs fixes), pour que ce
-      ne soit plus un cas unique câblé sur MERIDIAN mais un vrai schéma réutilisable
-      (`machine.altAccess` existe déjà comme point d'extension dans `validateMachines`).
+- [x] **`nc`/reverse shell généralisé** — le mécanisme n'est plus câblé sur MERIDIAN : le
+      schéma `machine.altAccess` est passé de `{ triggerPath, port, user }` (chaîne exacte +
+      port fixe) à `{ path, injectRegex, user }`. Le moteur (`cmdCurl`) détecte l'injection de
+      commande sur l'endpoint (`path` + `injectRegex` sur la query), **parse l'IP et le port du
+      callback depuis le payload du joueur** (au lieu de valeurs codées en dur), exige que l'IP
+      soit celle de l'attaquant (`ATTACKER_IP`) et que le port corresponde à l'écoute
+      (`nc -lvnp <port>`) — le joueur choisit donc librement son port. Réutilisé tel quel sur
+      une 2ᵉ machine, **PHANTOM** (injection via le même paramètre `?page=` que sa LFI), pour
+      prouver la généricité. Testé dans `tests/run.js` (port variable 9001, rejet d'une mauvaise
+      IP de callback, LFI normale non confondue avec une injection, exploitation complète de
+      PHANTOM par ce chemin).
 - [ ] **Chapitre "upload de webshell"** *(nouvelle idée)* — un faux formulaire d'upload mal
       filtré (`curl -F` simulé) qui accepte un fichier déguisé, exécuté ensuite via une
       requête vers son chemin — bon candidat pour un second cas d'usage du reverse shell

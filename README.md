@@ -126,6 +126,13 @@ Pour une machine web vulnérable à une LFI/SQLi (comme PHANTOM), pas de code mo
 - LFI : ajoute directement la clé `chemin?param=valeur` dans `machine.web`, `curl` la sert telle quelle.
 - SQLi : ajoute un objet `machine.sqli = { path, injectionRegex, successBody, failBody }`,
   déclenché par `curl -d "champ=valeur" <url>`.
+- Reverse shell / injection de commande (comme MERIDIAN et PHANTOM) : ajoute
+  `machine.altAccess = { path, injectRegex, user }`. `path` est l'endpoint vulnérable (sans
+  query), `injectRegex` reconnaît une injection de commande dans la query (ex :
+  `/file=[^;&]*;\s*nc\b/i`), `user` est le compte obtenu. Le moteur parse l'IP/port du callback
+  directement depuis le payload `nc <ip> <port>` du joueur : l'accès n'est accordé que si l'IP
+  vaut `ATTACKER_IP` **et** que le port correspond à l'écoute lancée avec `nc -lvnp <port>`. Le
+  joueur choisit donc librement son port — aucune valeur n'est câblée en dur côté machine.
 
 Pour une machine Windows (comme GLACIER), ajoute `osType: "windows"` sur l'objet machine :
 le FS interne reste en chemins unix (`/Users/xxx`), `resolvePath` traduit automatiquement les
