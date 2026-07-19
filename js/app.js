@@ -356,6 +356,27 @@ function shareEditorLink() {
     );
   } else { show(); }
 }
+// ── Attack graph (modale SVG) ────────────────────────────────────────────────
+function renderGraph() {
+  const id = document.getElementById("graph-select").value;
+  const m = MACHINES.find((mm) => mm.id === id);
+  const cont = document.getElementById("graph-container");
+  if (!m) { cont.innerHTML = "<p class='editor-desc'>Aucune machine débloquée à afficher.</p>"; return; }
+  cont.innerHTML = `<div class="graph-name">${m.name} — ${m.difficulty}</div>` + buildAttackGraphSVG(m, GAME.progress[m.id]);
+}
+function openGraph(machineId) {
+  const sel = document.getElementById("graph-select");
+  const unlocked = MACHINES.filter((m) => GAME.unlocked.includes(m.id));
+  sel.innerHTML = "";
+  unlocked.forEach((m) => { const o = document.createElement("option"); o.value = m.id; o.textContent = m.name; sel.appendChild(o); });
+  const target = (machineId && unlocked.some((m) => m.id === machineId)) ? machineId
+    : (unlocked.some((m) => m.id === SESSION.activeMachine) ? SESSION.activeMachine : (unlocked[0] && unlocked[0].id));
+  if (target) sel.value = target;
+  renderGraph();
+  document.getElementById("graph-modal").classList.remove("hidden");
+}
+function closeGraph() { document.getElementById("graph-modal").classList.add("hidden"); }
+
 // ── Bac à sable libre (modale de FS custom) ──────────────────────────────────
 const SANDBOX_TEMPLATE = JSON.stringify({
   "README.txt": "Mon bac à sable — j'édite ce FS comme je veux.",
@@ -740,6 +761,14 @@ function submitInput() {
     updatePromptLabel();
     return;
   }
+  if (firstWord === "graph") {
+    const arg = val.trim().split(/\s+/)[1];
+    const m = arg ? MACHINES.find((mm) => mm.id === arg || mm.name.toLowerCase() === arg.toLowerCase()) : null;
+    openGraph(m ? m.id : undefined);
+    printLine(m ? `🗺️ Graphe d'attaque de ${m.name}.` : "🗺️ Graphe d'attaque (bouton 🗺️ pour changer de machine).", "t-hint");
+    updatePromptLabel();
+    return;
+  }
 
   const res = runCommand(val);
   if (res) {
@@ -925,6 +954,12 @@ function boot() {
   document.getElementById("sandbox-mount").addEventListener("click", mountFromSandboxEditor);
   document.getElementById("sandbox-demo").addEventListener("click", () => { document.getElementById("sandbox-json").value = SANDBOX_TEMPLATE; setSandboxMsg(""); });
   document.getElementById("sandbox-modal").addEventListener("click", (e) => { if (e.target.id === "sandbox-modal") closeSandboxEditor(); });
+
+  document.getElementById("graph-toggle").addEventListener("click", () => openGraph());
+  document.getElementById("graph-close").addEventListener("click", closeGraph);
+  document.getElementById("graph-select").addEventListener("change", renderGraph);
+  document.getElementById("graph-modal").addEventListener("click", (e) => { if (e.target.id === "graph-modal") closeGraph(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !document.getElementById("graph-modal").classList.contains("hidden")) closeGraph(); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !document.getElementById("sandbox-modal").classList.contains("hidden")) closeSandboxEditor(); });
 
   if (location.hash === "#editor") openEditor();

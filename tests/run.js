@@ -1054,6 +1054,25 @@ section("Reverse engineering : strings / disas / resolve", () => {
   assertEqual(get(ctx, "GAME.score"), now, "un échantillon déjà résolu ne recrédite pas");
 });
 
+// ── 25. Attack graph : génération SVG selon la progression ───────────────────
+section("Attack graph : rendu SVG du chemin d'attaque", () => {
+  const ctx = freshContext();
+  // Progression partielle : recon + accès + flag user, mais pas privesc/root
+  const partial = get(ctx, `buildAttackGraphSVG(MACHINES.find(m=>m.id==='nimbus'), {recon:true,access:true,privesc:false,userFlag:true,rootFlag:false})`);
+  assert(/<svg[\s\S]*<\/svg>/.test(partial), "produit bien un élément SVG complet");
+  assert(/Recon/.test(partial) && /Accès initial/.test(partial) && /Privesc/.test(partial) && /Flag root/.test(partial), "les 5 étapes sont présentes comme nœuds");
+  assertEqual((partial.match(/class="ag-node on"/g) || []).length, 3, "3 nœuds atteints (recon, accès, flag user) portent la classe .on");
+
+  // Aucune progression : aucun nœud allumé
+  const none = get(ctx, `buildAttackGraphSVG(MACHINES.find(m=>m.id==='nimbus'), {recon:false,access:false,privesc:false,userFlag:false,rootFlag:false})`);
+  assertEqual((none.match(/class="ag-node on"/g) || []).length, 0, "sans progression, aucun nœud n'est allumé");
+
+  // Machine complète : les 5 nœuds allumés + label de privesc pertinent
+  const full = get(ctx, `buildAttackGraphSVG(MACHINES.find(m=>m.id==='axiom'), {recon:true,access:true,privesc:true,userFlag:true,rootFlag:true})`);
+  assertEqual((full.match(/class="ag-node on"/g) || []).length, 5, "machine terminée -> 5 nœuds allumés");
+  assert(/groupe docker/.test(full), "le label de privesc reflète la technique de la machine (docker pour AXIOM)");
+});
+
 // ── Rapport final ─────────────────────────────────────────────────────────────
 Promise.all(pendingAsync).then(() => {
   console.log(`\n${"─".repeat(60)}`);

@@ -255,10 +255,15 @@ reverse shell manuel sur MERIDIAN, `validateMachines` en garde-fou de schéma) :
 
 ## 🤯 Phase 5 — Idées de fou malade (toujours 100% vanilla JS, sans dépendance, sans backend)
 
-- [ ] **Attack graph non-linéaire** — remplacer le chemin figé recon → accès → privesc par un
-      vrai graphe de dépendances par machine (plusieurs vulnérabilités d'entrée possibles,
-      plusieurs chemins de privesc), avec un rendu SVG interactif du graphe découvert au fur
-      et à mesure que le joueur avance (nœuds "grisés" tant qu'ils ne sont pas atteints)
+- [~] **Attack graph non-linéaire** — *rendu SVG livré* : la commande **`graph [machine]`** (ou le
+      bouton **🗺️**) ouvre une modale affichant le **graphe d'attaque** de la machine en SVG
+      (`buildAttackGraphSVG`, généré dans `engine.js` → testable), avec les nœuds recon → accès →
+      privesc → flag root (+ flag user en branche) et les libellés de technique déduits de la
+      machine. Les nœuds/arêtes s'**allument** (classe `.on`, vert) à mesure que la progression
+      avance, restent **grisés** sinon. Sélecteur pour changer de machine. Testé dans `tests/run.js`
+      (SVG complet, comptage des nœuds allumés selon la progression, libellé de privesc) et vérifié
+      au rendu. *Reste ouvert* : le vrai graphe **non-linéaire** (plusieurs entrées / chemins de
+      privesc alternatifs) — pour l'instant le graphe reste le chemin canonique recon→privesc.
 - [x] **Sous-réseau simulé multi-hôtes** — `nmap <cidr>` (ex. `nmap 172.16.20.0/24`) balaie un
       segment interne et révèle **plusieurs hôtes d'un coup** (`SUBNETS`), et `arp -a` affiche la
       table ARP (MAC simulées sur `tun0`). Prolonge le pivot déjà en place : le segment n'est

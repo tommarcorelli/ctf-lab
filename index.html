@@ -34,6 +34,7 @@
     <button id="editor-toggle" class="icon-toggle" type="button" title="Créer une machine (éditeur)">🛠️</button>
     <button id="replay-toggle" class="icon-toggle" type="button" title="Rejouer la session (replay)">▶️</button>
     <button id="sandbox-toggle" class="icon-toggle" type="button" title="Bac à sable libre (FS custom)">🧪</button>
+    <button id="graph-toggle" class="icon-toggle" type="button" title="Graphe d'attaque">🗺️</button>
   </header>
 
   <main class="layout">
@@ -137,6 +138,21 @@
         <button id="sandbox-mount" class="editor-btn primary" type="button">Monter le FS</button>
         <button id="sandbox-demo" class="editor-btn" type="button">FS de démo</button>
       </div>
+    </div>
+  </div>
+
+  <div id="graph-modal" class="editor-modal hidden" role="dialog" aria-modal="true" aria-labelledby="graph-title">
+    <div class="editor-card">
+      <div class="editor-head">
+        <h2 id="graph-title">🗺️ Graphe d'attaque</h2>
+        <button id="graph-close" class="editor-close" type="button" aria-label="Fermer le graphe">✕</button>
+      </div>
+      <div class="graph-toolbar">
+        <label for="graph-select">Machine :</label>
+        <select id="graph-select" class="graph-select"></select>
+      </div>
+      <div id="graph-container" class="graph-container"></div>
+      <p class="editor-desc">Les nœuds s'allument à mesure que tu progresses : recon → accès initial → élévation de privilèges → flags.</p>
     </div>
   </div>
 

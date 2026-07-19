@@ -595,7 +595,7 @@ const KNOWN_COMMANDS = [
   "dir", "type", "net", "schtasks", "icacls", "vim", "nc", "arp", "cloudctl", "generate", "replay", "sandbox",
   "blueteam", "incident", "answer", "bthint", "firewall", "iptables",
   "phishing", "inbox", "mail", "report", "phhint",
-  "malware", "re", "strings", "disas", "disasm", "resolve", "rehint",
+  "malware", "re", "strings", "disas", "disasm", "resolve", "rehint", "graph",
 ];
 const PATH_COMMANDS = ["cd", "ls", "cat", "find", "dir", "type", "icacls", "vim"];
 
@@ -1680,6 +1680,54 @@ function cmdResolve(args) {
   return out(`✅ Analyse complète — échantillon « ${s.filename} » élucidé ! +${s.points} pts.`, "t-ok");
 }
 
+// ── Attack graph : rendu SVG du chemin d'attaque découvert (nœuds grisés) ────
+const AG_PRIVESC_LABELS = {
+  "sudo-gtfobins": "sudo GTFOBins", "sudo-direct": "sudo GTFOBins",
+  "cron-writable": "cron world-writable", "suid-binary": "binaire SUID",
+  "schtask-writable": "tâche planifiée SYSTEM", "docker-group": "groupe docker",
+};
+function agAccessLabel(m) {
+  if (m.upload) return "upload webshell";
+  if (m.cloud) return Object.values(m.cloud.buckets || {}).some((b) => b.deploy) ? "bucket writable (RCE)" : "bucket public";
+  if (m.sqli) return "SQLi bypass login";
+  if (m.internal) return "pivot ssh -L";
+  if (m.ftp && m.ftp.enabled) return "FTP anon → creds";
+  if (m.altAccess) return "reverse shell / creds";
+  return "fuite de creds → SSH";
+}
+function agEsc(s) { return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
+function buildAttackGraphSVG(machine, progress) {
+  const p = progress || { recon: false, access: false, privesc: false, userFlag: false, rootFlag: false };
+  const W = 130, H = 56;
+  const nodes = [
+    { x: 20, y: 92, on: p.recon, title: "Recon", sub: "nmap" },
+    { x: 190, y: 92, on: p.access, title: "Accès initial", sub: agAccessLabel(machine) },
+    { x: 360, y: 92, on: p.privesc, title: "Privesc", sub: AG_PRIVESC_LABELS[machine.privesc.type] || machine.privesc.type },
+    { x: 530, y: 92, on: p.rootFlag, title: "Flag root", sub: "root.txt" },
+    { x: 360, y: 8, on: p.userFlag, title: "Flag user", sub: "user.txt" },
+  ];
+  const edges = [
+    { x1: 150, y1: 120, x2: 190, y2: 120, on: p.access },        // recon -> accès
+    { x1: 320, y1: 120, x2: 360, y2: 120, on: p.privesc },       // accès -> privesc
+    { x1: 490, y1: 120, x2: 530, y2: 120, on: p.rootFlag },      // privesc -> root
+    { x1: 255, y1: 92, x2: 380, y2: 64, on: p.userFlag },        // accès -> flag user
+  ];
+  const edgeSvg = edges.map((e) => `<line class="ag-edge${e.on ? " on" : ""}" x1="${e.x1}" y1="${e.y1}" x2="${e.x2}" y2="${e.y2}" marker-end="url(#agArrow)"/>`).join("");
+  const nodeSvg = nodes.map((n) => (
+    `<g class="ag-node${n.on ? " on" : ""}">` +
+    `<rect x="${n.x}" y="${n.y}" rx="9" ry="9" width="${W}" height="${H}"/>` +
+    `<text class="ag-t" x="${n.x + W / 2}" y="${n.y + 23}">${n.on ? "✔ " : ""}${agEsc(n.title)}</text>` +
+    `<text class="ag-s" x="${n.x + W / 2}" y="${n.y + 41}">${agEsc(n.sub)}</text>` +
+    `</g>`
+  )).join("");
+  return (
+    `<svg class="attack-graph" viewBox="0 0 680 170" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Graphe d'attaque de ${agEsc(machine.name)}">` +
+    `<defs><marker id="agArrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" class="ag-arrowhead"/></marker></defs>` +
+    edgeSvg + nodeSvg +
+    `</svg>`
+  );
+}
+
 // ── Détection & capture de flags dans une sortie ─────────────────────────────
 function scanForFlags(machine, text) {
   if (!machine) return;
@@ -2116,7 +2164,8 @@ function cmdHelp() {
     "Windows (machine cible Windows) : dir, type, net user, net localgroup administrators, schtasks /query, icacls <fichier>\n" +
     "Filtres en pipe : grep, wc -l, sort [-u], head, tail, cut, awk '{print $N}'\n" +
     "Shell : variables $USER/$HOME/$PWD/$HOSTNAME/$UID/$? (${VAR} aussi), substitution $(commande), redirections > >> 2> &> 2>/dev/null\n" +
-    "Bac à sable : generate [seed] (machine aléatoire jouable), sandbox (FS libre pour s'entraîner, bouton 🧪), éditeur de machines (🛠️), replay (rejoue ta session, ▶️)"
+    "Bac à sable : generate [seed] (machine aléatoire jouable), sandbox (FS libre pour s'entraîner, bouton 🧪), éditeur de machines (🛠️), replay (rejoue ta session, ▶️)\n" +
+    "Visualisation : graph [machine] (graphe d'attaque, bouton 🗺️)"
   );
 }
 

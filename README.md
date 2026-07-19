@@ -100,6 +100,14 @@ aux espaces, plusieurs formulations acceptées), `bthint <id> <question>` donne 
 incident entièrement résolu rapporte des points ; les résoudre tous débloque le badge **🛡️ Analyste
 SOC**. Tout est généré en dur (aucun IDS ni backend).
 
+## Graphe d'attaque
+
+La commande **`graph [machine]`** (ou le bouton **🗺️**) ouvre une modale qui affiche le **graphe
+d'attaque** de la machine en SVG : recon → accès initial → élévation de privilèges → flag root (avec
+le flag user en branche), chaque nœud annoté de sa technique (déduite de la machine). Les nœuds et
+les arêtes **s'allument en vert** à mesure que tu progresses et restent **grisés** tant que l'étape
+n'est pas atteinte. Un sélecteur permet de basculer entre les machines débloquées.
+
 ## Reverse engineering
 
 Un chapitre forensic/malware : 2 faux binaires à analyser (un dropper/C2 `update.bin`, un
