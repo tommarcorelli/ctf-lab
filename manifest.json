@@ -1,0 +1,14 @@
+{
+  "name": "CTF Lab — Terminal d'entraînement",
+  "short_name": "CTF Lab",
+  "description": "Mini plateforme façon RootMe/HackTheBox, terminal simulé 100% client, sans backend.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0a0e12",
+  "theme_color": "#0a0e12",
+  "lang": "fr",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

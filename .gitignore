@@ -1,0 +1,13 @@
+# Dépendances (le projet est zéro-dépendance, mais au cas où)
+node_modules/
+
+# Artefacts OS / éditeurs
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+.idea/
+.vscode/
+
+# Sauvegardes de jeu exportées localement
+*.json.enc

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CTF Lab — Terminal d'entraînement</title>
+<meta name="theme-color" content="#0a0e12">
+<meta name="description" content="Mini plateforme façon RootMe/HackTheBox : terminal simulé en vanilla JS, 100% client, sans backend.">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <div id="toasts" class="toasts"></div>
+  <canvas id="particles-canvas" class="particles-canvas"></canvas>
+
+  <header class="app-header">
+    <div class="brand">
+      <span class="brand-mark">&gt;_</span>
+      <span class="brand-name">CTF<span class="accent">LAB</span></span>
+    </div>
+    <div class="header-sub">Recon → Accès initial → Élévation de privilèges → Flag</div>
+    <div class="xp-wrap" title="Niveau et expérience">
+      <div id="xp-label" class="xp-label">Niveau 1 · 0/500 XP</div>
+      <div class="xp-bar"><div id="xp-fill" class="xp-fill" style="width:0%"></div></div>
+    </div>
+    <div id="score-status" class="score-status">Score : 0 pts</div>
+    <button id="theme-toggle" class="icon-toggle" type="button" title="Changer de thème">🌙</button>
+    <button id="sound-toggle" class="icon-toggle" type="button" title="Son à la capture d'un flag">🔈</button>
+    <button id="ambient-toggle" class="icon-toggle" type="button" title="Ambiance sonore continue (générée, varie selon la difficulté)">🎧</button>
+    <button id="voice-toggle" class="icon-toggle" type="button" title="Narration vocale des indices et messages importants">🗣️</button>
+    <button id="fx-toggle" class="icon-toggle" type="button" title="Effets visuels (particules, glow)">✨</button>
+  </header>
+
+  <main class="layout">
+    <aside class="sidebar">
+      <h2>Machines</h2>
+      <div id="machines-list" class="machines-list"></div>
+      <div class="legend">
+        <div><span class="step on"></span> étape validée</div>
+        <div><span class="step"></span> étape restante</div>
+      </div>
+      <h2 class="badges-title">Badges</h2>
+      <div id="badges-list" class="badges-list"></div>
+    </aside>
+
+    <section class="terminal-wrap">
+      <div class="term-titlebar">
+        <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
+        <span class="term-title">kali@ctf-lab: ~</span>
+      </div>
+      <div id="term-output" class="term-output" role="log" aria-live="polite" aria-relevant="additions"></div>
+      <div class="term-inputline">
+        <span id="prompt-label" class="prompt-label">kali@kali-atk:~$</span>
+        <input id="term-input" class="term-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" autofocus aria-label="Ligne de commande du terminal CTF Lab">
+      </div>
+      <div class="quickbar">
+        <button data-cmd="machines">machines</button>
+        <button data-cmd="hint">hint</button>
+        <button data-cmd="progress">progress</button>
+        <button data-cmd="badges">badges</button>
+        <button data-cmd="records">records</button>
+        <button data-cmd="challenges">challenges</button>
+        <button data-cmd="daily">daily</button>
+        <button data-cmd="help">help</button>
+        <button data-cmd="clear">clear</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="js/machines.js"></script>
+  <script src="js/engine.js"></script>
+  <script src="js/app.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      document.querySelectorAll(".quickbar button").forEach((b) => {
+        b.addEventListener("click", () => {
+          document.getElementById("term-input").value = b.dataset.cmd;
+          submitInput();
+          document.getElementById("term-input").focus();
+        });
+      });
+    });
+  </script>
+</body>
+</html>

