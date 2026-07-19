@@ -157,6 +157,14 @@ d'accès (FTP / config web / bucket cloud) et une brique de privesc (sudo GTFOBi
 Le seed est déterministe (même seed → même machine), donc une machine générée se rejoue ou se
 partage à l'identique.
 
+## Replay de session
+
+Chaque commande et sa sortie sont enregistrées en mémoire. Le bouton **▶️** de l'en-tête (ou la
+commande **`replay`**) ouvre un overlay qui **rejoue** ta session façon asciinema (frappe animée +
+sorties), **sans ré-exécuter** les commandes — ta progression n'est donc pas modifiée. `replay save`
+(ou le bouton **« Télécharger .json »**) exporte le replay ; **« Charger un replay »** en rejoue un
+importé. `replay clear` remet le compteur à zéro. Zéro dépendance, 100% côté client.
+
 ## Ajouter une machine
 
 Ajoute un objet dans `MACHINES` (`js/machines.js`) avec le même schéma que les machines

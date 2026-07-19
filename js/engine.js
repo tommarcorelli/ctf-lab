@@ -513,7 +513,7 @@ const KNOWN_COMMANDS = [
   "challenges", "challenge", "chint", "submit", "hashcat", "daily", "score", "history",
   "whoami", "id", "groups", "pwd", "ls", "cd", "cat", "find", "echo", "nmap", "curl",
   "ftp", "ssh", "sudo", "crontab", "exit", "man", "docker", "export", "import",
-  "dir", "type", "net", "schtasks", "icacls", "vim", "nc", "cloudctl", "generate",
+  "dir", "type", "net", "schtasks", "icacls", "vim", "nc", "cloudctl", "generate", "replay",
 ];
 const PATH_COMMANDS = ["cd", "ls", "cat", "find", "dir", "type", "icacls", "vim"];
 
@@ -1453,7 +1453,7 @@ function cmdHelp() {
     "Windows (machine cible Windows) : dir, type, net user, net localgroup administrators, schtasks /query, icacls <fichier>\n" +
     "Filtres en pipe : grep, wc -l, sort [-u], head, tail, cut, awk '{print $N}'\n" +
     "Shell : variables $USER/$HOME/$PWD/$HOSTNAME/$UID/$? (${VAR} aussi), substitution $(commande), redirections > >> 2> &> 2>/dev/null\n" +
-    "Bac à sable : generate [seed] (génère une machine aléatoire jouable), + éditeur de machines (bouton 🛠️)"
+    "Bac à sable : generate [seed] (génère une machine aléatoire jouable), éditeur de machines (bouton 🛠️), replay (rejoue ta session, bouton ▶️)"
   );
 }
 

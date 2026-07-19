@@ -32,6 +32,7 @@
     <button id="voice-toggle" class="icon-toggle" type="button" title="Narration vocale des indices et messages importants">🗣️</button>
     <button id="fx-toggle" class="icon-toggle" type="button" title="Effets visuels (particules, glow)">✨</button>
     <button id="editor-toggle" class="icon-toggle" type="button" title="Créer une machine (éditeur)">🛠️</button>
+    <button id="replay-toggle" class="icon-toggle" type="button" title="Rejouer la session (replay)">▶️</button>
   </header>
 
   <main class="layout">
@@ -90,6 +91,27 @@
         <button id="editor-share" class="editor-btn" type="button">Lien de partage</button>
         <button id="editor-download" class="editor-btn" type="button">Télécharger .json</button>
         <button id="editor-reset" class="editor-btn" type="button">Modèle par défaut</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="replay-modal" class="editor-modal hidden" role="dialog" aria-modal="true" aria-labelledby="replay-title">
+    <div class="editor-card replay-card">
+      <div class="editor-head">
+        <h2 id="replay-title">▶️ Replay de session</h2>
+        <button id="replay-close" class="editor-close" type="button" aria-label="Fermer le replay">✕</button>
+      </div>
+      <p class="editor-desc">
+        Rejoue tes commandes et leurs sorties façon asciinema — <strong>sans les ré-exécuter</strong>,
+        donc ta progression n'est pas touchée. Exporte le replay en <code>.json</code> pour le rejouer
+        plus tard ou le partager.
+      </p>
+      <div id="replay-output" class="term-output replay-output" role="log" aria-live="polite"></div>
+      <div class="editor-actions">
+        <button id="replay-play" class="editor-btn primary" type="button">Rejouer</button>
+        <button id="replay-download" class="editor-btn" type="button">Télécharger .json</button>
+        <button id="replay-open" class="editor-btn" type="button">Charger un replay</button>
+        <span id="replay-status" class="replay-status" aria-live="polite"></span>
       </div>
     </div>
   </div>

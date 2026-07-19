@@ -675,6 +675,7 @@ function submitInput() {
     const res = tryPassword(val);
     printLine(res.text, res.cls);
     printLine("");
+    recordStep("mot de passe :", "*".repeat(val.length || 0), [{ text: res.text, cls: res.cls }]);
     updatePromptLabel();
     updateAmbientForContext();
     return;
@@ -689,6 +690,7 @@ function submitInput() {
     return;
   }
 
+  const prompt = promptString();
   printPrompt(val);
 
   const firstWord = val.trim().split(/\s+/)[0] || "";
@@ -702,15 +704,109 @@ function submitInput() {
     updatePromptLabel();
     return;
   }
+  if (firstWord === "replay") {
+    handleReplayCommand(val.trim().split(/\s+/).slice(1));
+    updatePromptLabel();
+    return;
+  }
 
   const res = runCommand(val);
   if (res) {
     printLine(res.text, res.cls);
     if (res.cls === "t-hint") speak(res.text);
   }
+  recordStep(prompt, val, res ? [{ text: res.text, cls: res.cls || "t-out" }] : []);
   outputEl.scrollTop = outputEl.scrollHeight;
   updatePromptLabel();
   updateAmbientForContext();
+}
+
+// ── Replay local rejouable (façon asciinema, sans re-exécution ni dépendance) ─
+// On enregistre chaque commande soumise + sa sortie ; le replay les REJOUE visuellement
+// (aucun appel moteur), donc la progression réelle n'est jamais modifiée.
+const RECORDING = [];
+const REPLAY_MAX = 400;
+function recordStep(prompt, input, out) {
+  RECORDING.push({ prompt, input, out: out || [] });
+  if (RECORDING.length > REPLAY_MAX) RECORDING.shift();
+}
+function handleReplayCommand(args) {
+  const sub = (args[0] || "").toLowerCase();
+  if (sub === "save" || sub === "download") {
+    if (!RECORDING.length) { printLine("Rien à enregistrer : aucune commande dans la session.", "t-hint"); return; }
+    downloadText(`ctf-lab-replay-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(RECORDING), "application/json");
+    printLine(`💾 Replay exporté (${RECORDING.length} étapes).`, "t-ok");
+    return;
+  }
+  if (sub === "clear") { RECORDING.length = 0; printLine("Enregistrement du replay effacé.", "t-hint"); return; }
+  if (!RECORDING.length) { printLine("Aucune commande à rejouer pour l'instant — joue un peu, puis relance `replay`.", "t-hint"); return; }
+  openReplay();
+  playReplay(RECORDING);
+}
+let replayToken = 0;
+function replayModal() { return document.getElementById("replay-modal"); }
+function openReplay() { replayModal().classList.remove("hidden"); }
+function closeReplay() { replayToken++; replayModal().classList.add("hidden"); }
+function replayPrint(pane, text, cls) {
+  if (text === "" || text == null) return;
+  String(text).split("\n").forEach((l) => {
+    const d = document.createElement("div");
+    d.className = "t-line " + (cls || "t-out");
+    d.textContent = l;
+    pane.appendChild(d);
+  });
+}
+async function playReplay(steps) {
+  const pane = document.getElementById("replay-output");
+  const status = document.getElementById("replay-status");
+  pane.innerHTML = "";
+  const token = ++replayToken;
+  status.textContent = `▶ lecture (${steps.length} étapes)…`;
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  for (const step of steps) {
+    if (token !== replayToken) return;
+    if ((step.input || "").trim() === "clear") { pane.innerHTML = ""; continue; }
+    const line = document.createElement("div");
+    line.className = "t-line t-prompt";
+    line.textContent = (step.prompt || "") + " ";
+    pane.appendChild(line);
+    for (const ch of String(step.input || "")) {
+      if (token !== replayToken) return;
+      line.textContent += ch;
+      pane.scrollTop = pane.scrollHeight;
+      await sleep(20);
+    }
+    await sleep(150);
+    for (const o of (step.out || [])) { if (token !== replayToken) return; replayPrint(pane, o.text, o.cls); }
+    pane.scrollTop = pane.scrollHeight;
+    await sleep(320);
+  }
+  if (token === replayToken) status.textContent = `■ fin du replay (${steps.length} étapes)`;
+}
+function loadReplayFromFile() {
+  const inputFile = document.createElement("input");
+  inputFile.type = "file";
+  inputFile.accept = ".json,application/json";
+  inputFile.style.display = "none";
+  inputFile.addEventListener("change", () => {
+    const file = inputFile.files && inputFile.files[0];
+    document.body.removeChild(inputFile);
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const steps = JSON.parse(reader.result);
+        if (!Array.isArray(steps)) throw new Error("format");
+        openReplay();
+        playReplay(steps);
+      } catch (e) {
+        document.getElementById("replay-status").textContent = "❌ Fichier de replay invalide.";
+      }
+    };
+    reader.readAsText(file);
+  });
+  document.body.appendChild(inputFile);
+  inputFile.click();
 }
 
 function boot() {
@@ -784,6 +880,15 @@ function boot() {
   document.getElementById("editor-share").addEventListener("click", shareEditorLink);
   document.getElementById("editor-reset").addEventListener("click", () => { editorEl("editor-json").value = EDITOR_TEMPLATE; setEditorMsg(""); });
   document.getElementById("editor-modal").addEventListener("click", (e) => { if (e.target.id === "editor-modal") closeEditor(); });
+
+  document.getElementById("replay-toggle").addEventListener("click", () => { openReplay(); playReplay(RECORDING); });
+  document.getElementById("replay-close").addEventListener("click", closeReplay);
+  document.getElementById("replay-play").addEventListener("click", () => playReplay(RECORDING));
+  document.getElementById("replay-download").addEventListener("click", () => { if (RECORDING.length) downloadText(`ctf-lab-replay-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(RECORDING), "application/json"); });
+  document.getElementById("replay-open").addEventListener("click", loadReplayFromFile);
+  document.getElementById("replay-modal").addEventListener("click", (e) => { if (e.target.id === "replay-modal") closeReplay(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !replayModal().classList.contains("hidden")) closeReplay(); });
+
   if (location.hash === "#editor") openEditor();
   if (location.hash.startsWith("#machine=")) loadSharedMachine(location.hash.slice("#machine=".length));
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !editorEl("editor-modal").classList.contains("hidden")) closeEditor(); });

@@ -231,9 +231,13 @@ reverse shell manuel sur MERIDIAN, `validateMachines` en garde-fou de schéma) :
       chargement depuis token + exploitation complète, token corrompu géré) et vérifié au rendu
       (headless). *Reste ouvert* : le partage d'une **session/replay** complet (pas seulement
       d'une machine).
-- [ ] **Replay local rejouable** — enregistrer la liste des commandes d'une session et
-      pouvoir la "rejouer" à l'écran (façon asciinema fait maison, sans dépendance) pour
-      vérifier son propre parcours ou en faire un GIF/vidéo côté client
+- [x] **Replay local rejouable** — chaque commande soumise et sa sortie sont enregistrées
+      (`RECORDING` dans `app.js`) ; le bouton **▶️** ou la commande **`replay`** ouvrent un overlay
+      qui **rejoue** la session façon asciinema (animation de frappe + sorties), **sans
+      ré-exécuter** aucune commande — la progression réelle n'est donc jamais modifiée. Le replay
+      s'exporte en `.json` (`replay save` ou bouton) et se recharge (« Charger un replay ») pour
+      être rejoué plus tard ou partagé. Aucune dépendance, tout en Canvas/DOM. Vérifié au rendu
+      (headless) : frappe animée, sorties fidèles, « fin du replay ».
 - [ ] **Mode bac à sable libre** — une machine "vierge" où on peut monter n'importe quel FS
       custom (JSON collé par l'utilisateur) pour s'entraîner aux commandes sans notion de
       flag ni de scoring
