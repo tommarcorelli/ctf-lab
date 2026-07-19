@@ -1155,6 +1155,27 @@ section("Time-machine du FS : undo / redo", () => {
   assert(/Rien à annuler/.test(run(ctx, "undo").text), "quitter le sandbox réinitialise l'historique du FS");
 });
 
+// ── 29. Hot-seat local : profils multiples comparés ──────────────────────────
+section("Hot-seat : profils de joueur multiples", () => {
+  const ctx = freshContext();
+  assertEqual(get(ctx, "HOTSEAT.current"), "joueur1", "profil par défaut = joueur1");
+  get(ctx, "GAME.score = 500; persistSave();"); // joueur1 -> 500
+
+  const sw = run(ctx, "profile alice");
+  assert(sw.cls !== "t-err" && /alice/.test(sw.text), "on bascule sur un nouveau profil");
+  assertEqual(get(ctx, "HOTSEAT.current"), "alice", "profil courant = alice");
+  assertEqual(get(ctx, "GAME.score"), 0, "un nouveau profil démarre une partie neuve");
+  get(ctx, "GAME.score = 200; persistSave();"); // alice -> 200
+
+  run(ctx, "profile joueur1");
+  assertEqual(get(ctx, "GAME.score"), 500, "revenir sur joueur1 restaure sa progression (500)");
+
+  const list = run(ctx, "profiles");
+  assert(/alice/.test(list.text) && /joueur1/.test(list.text), "profiles liste les deux joueurs");
+  assert(/500/.test(list.text) && /200/.test(list.text), "profiles montre les scores respectifs");
+  assert(/➤ joueur1/.test(list.text) || /➤\s+joueur1/.test(list.text), "le profil courant est marqué ➤");
+});
+
 // ── Rapport final ─────────────────────────────────────────────────────────────
 Promise.all(pendingAsync).then(() => {
   console.log(`\n${"─".repeat(60)}`);

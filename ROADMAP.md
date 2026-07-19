@@ -316,9 +316,13 @@ reverse shell manuel sur MERIDIAN, `validateMachines` en garde-fou de schéma) :
 - [ ] **Mode "fantôme" sur le replay** — en s'appuyant sur le replay local déjà prévu en Phase 4 :
       importer le replay d'un run (le sien ou un fichier partagé) et le rejouer en parallèle du
       run courant façon "ghost" speedrun, sans aucun serveur ni classement en ligne
-- [ ] **Hot-seat local** — plusieurs profils de joueur sur le même navigateur/écran, qui jouent
-      à tour de rôle sur la même session de machines avec un classement local comparatif —
-      explicitement pas de multijoueur réseau, juste plusieurs saves locales comparées
+- [x] **Hot-seat local** — plusieurs profils de joueur sur le même navigateur, avec des saves
+      **séparées par profil** (`profileSaveKey(nom)`, registre `HOTSEAT` dans `localStorage`, avec
+      migration de l'ancien format mono-profil vers `joueur1`). **`profile <nom>`** sauvegarde le
+      profil courant puis charge (ou crée) l'autre et réinitialise la session ; **`profiles`** liste
+      tous les joueurs avec score/niveau/rang/machines rootées (classement local comparatif). Pas de
+      multijoueur réseau, juste des saves locales comparées. Testé dans `tests/run.js` (bascule,
+      isolation des scores entre profils, listing comparatif).
 - [x] **Accessibilité poussée** — thème contraste élevé, cartes de machines navigables au clavier
       (Tab + Entrée), `role="log"`/`aria-live` sur le terminal, `aria-label` sur l'input et les
       badges. *Reste ouvert* : compatibilité lecteur d'écran plus poussée sur le pager (`!sh`) et

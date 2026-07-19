@@ -71,18 +71,68 @@ function sanitizeGameState(data) {
   data.saveVersion = SAVE_VERSION;
   return data;
 }
+// ── Hot-seat : plusieurs profils de joueur sur le même navigateur ────────────
+const HOTSEAT_KEY = "ctf_lab_hotseat_v1";
+function loadHotseat() {
+  try {
+    const r = localStorage.getItem(HOTSEAT_KEY);
+    if (r) { const h = JSON.parse(r); if (h && typeof h.current === "string" && Array.isArray(h.names) && h.names.length) return h; }
+  } catch (e) {}
+  return { current: "joueur1", names: ["joueur1"] };
+}
+function saveHotseat() { try { localStorage.setItem(HOTSEAT_KEY, JSON.stringify(HOTSEAT)); } catch (e) {} }
+let HOTSEAT = loadHotseat();
+function profileSaveKey(name) { return SAVE_KEY + "__" + name; }
+
 function loadSave() {
   try {
-    const raw = localStorage.getItem(SAVE_KEY);
+    let raw = localStorage.getItem(profileSaveKey(HOTSEAT.current));
+    if (!raw && HOTSEAT.current === "joueur1") raw = localStorage.getItem(SAVE_KEY); // migration de l'ancien format mono-profil
     if (raw) return sanitizeGameState(JSON.parse(raw));
   } catch (e) {}
   return sanitizeGameState({ score: 0, unlocked: [MACHINES[0].id], progress: {}, hintsUsed: {}, times: {}, badges: {}, bestTimes: {}, jeopardy: { solved: {}, hintsUsed: {} }, blueteam: { solved: {}, answered: {}, hintsUsed: {} }, firewall: { solved: {} }, phishing: { solved: {}, answered: {} }, reverse: { solved: {}, answered: {} }, stackpwn: { solved: false }, insaneMode: false });
 }
 function persistSave() {
-  localStorage.setItem(SAVE_KEY, JSON.stringify(GAME));
+  try { localStorage.setItem(profileSaveKey(HOTSEAT.current), JSON.stringify(GAME)); } catch (e) {}
 }
 
 let GAME = loadSave();
+
+function cmdProfiles() {
+  const lines = ["👥 Profils (hot-seat local, comparés) :", ""];
+  HOTSEAT.names.forEach((n) => {
+    let sc = 0, done = 0;
+    try {
+      let raw = localStorage.getItem(profileSaveKey(n));
+      if (!raw && n === "joueur1") raw = localStorage.getItem(SAVE_KEY);
+      if (n === HOTSEAT.current) { sc = GAME.score; done = Object.values(GAME.progress).filter((p) => p && p.rootFlag).length; }
+      else if (raw) { const g = JSON.parse(raw); sc = g.score || 0; done = g.progress ? Object.values(g.progress).filter((p) => p && p.rootFlag).length : 0; }
+    } catch (e) {}
+    const info = levelInfo(sc);
+    lines.push(`${n === HOTSEAT.current ? "➤" : " "} ${n.padEnd(16)} ${String(sc).padStart(5)} pts · niv.${info.level} (${rankTitle(info.level)}) · ${done} machine(s) rootée(s)`);
+  });
+  lines.push("");
+  lines.push("Change ou crée un profil : `profile <nom>`. Le profil courant est marqué ➤.");
+  return out(lines.join("\n"));
+}
+function cmdProfile(args) {
+  const name = args.join(" ").trim().replace(/[^A-Za-z0-9_\- ]/g, "").slice(0, 20).trim();
+  if (!name) return out(`Profil courant : « ${HOTSEAT.current} ». Usage : \`profile <nom>\` pour changer/créer, \`profiles\` pour la liste.`);
+  if (name === HOTSEAT.current) return out(`Tu es déjà sur le profil « ${name} ».`, "t-hint");
+  persistSave(); // sauvegarde le profil courant avant de basculer
+  const isNew = !HOTSEAT.names.includes(name);
+  if (isNew) HOTSEAT.names.push(name);
+  HOTSEAT.current = name;
+  saveHotseat();
+  GAME = loadSave();
+  resetSessionToAttacker();
+  if (typeof renderSidebar === "function") renderSidebar();
+  if (typeof renderBadges === "function") renderBadges();
+  if (typeof updateStatus === "function") updateStatus();
+  if (typeof updatePromptLabel === "function") updatePromptLabel();
+  const info = levelInfo(GAME.score);
+  return out(`👤 Profil actif : « ${name} »${isNew ? " (nouveau)" : ""} — score ${GAME.score}, niveau ${info.level}. À toi de jouer !`, "t-ok");
+}
 
 // Ajoute des points au score, avec le multiplicateur du mode Insane (1.5x) s'il est actif.
 function addScore(base) {
@@ -622,7 +672,7 @@ const KNOWN_COMMANDS = [
   "dir", "type", "net", "schtasks", "icacls", "vim", "nc", "arp", "cloudctl", "generate", "replay", "sandbox",
   "blueteam", "incident", "answer", "bthint", "firewall", "iptables",
   "phishing", "inbox", "mail", "report", "phhint",
-  "malware", "re", "strings", "disas", "disasm", "resolve", "rehint", "graph", "stack", "skills", "whois", "undo", "redo",
+  "malware", "re", "strings", "disas", "disasm", "resolve", "rehint", "graph", "stack", "skills", "whois", "undo", "redo", "profiles", "profile",
 ];
 const PATH_COMMANDS = ["cd", "ls", "cat", "find", "dir", "type", "icacls", "vim"];
 
@@ -2229,6 +2279,8 @@ function dispatch(cmd, args, rawFirst) {
     case "whois": return cmdWhois(args);
     case "undo": return cmdUndo();
     case "redo": return cmdRedo();
+    case "profiles": return cmdProfiles();
+    case "profile": return cmdProfile(args);
     case "history": return out(SESSION.history.slice(0, -1).join("\n"));
     case "whoami": {
       if (isWinCtx()) {
@@ -2334,7 +2386,8 @@ function cmdHelp() {
     "Shell : variables $USER/$HOME/$PWD/$HOSTNAME/$UID/$? (${VAR} aussi), substitution $(commande), redirections > >> 2> &> 2>/dev/null\n" +
     "Bac à sable : generate [seed] (machine aléatoire jouable), sandbox (FS libre pour s'entraîner, bouton 🧪), éditeur de machines (🛠️), replay (rejoue ta session, ▶️)\n" +
     "Visualisation : graph [machine] (graphe d'attaque, bouton 🗺️), stack (défi buffer overflow schématisé, bouton 🧠)\n" +
-    "Progression : score, skills (arbre de compétences / rang), whois <ip> (recon avancée, niv.2+)"
+    "Progression : score, skills (arbre de compétences / rang), whois <ip> (recon avancée, niv.2+)\n" +
+    "Hot-seat : profiles (comparer les joueurs), profile <nom> (changer/créer un profil local)"
   );
 }
 
