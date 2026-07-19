@@ -17,21 +17,16 @@ Vue synthétique de ce qui reste ouvert et vaudrait le coup d'être attaqué ens
 plus de ce qui vient d'être livré dans les dernières passes (`vim`, `nc` bannière + écoute,
 reverse shell manuel sur MERIDIAN, `validateMachines` en garde-fou de schéma) :
 
-1. **Extraction JSON pure des machines** (Phase 3) — le schéma de validation existe déjà ;
-   il reste à sérialiser proprement les champs regex du privesc pour sortir `machines.js`
-   en fichier `.json` séparé.
-2. **`vrai parser shell`** (Phase 3) — dette technique qui limite déjà certains scénarios
+1. **`vrai parser shell`** (Phase 3) — dette technique qui limite déjà certains scénarios
    (pas de citations imbriquées, pas de `$(...)`) ; utile avant d'enrichir encore les
-   familles de vulnérabilités web.
-3. **i18n FR/EN** (Phase 3) — gros chantier transverse, à faire une fois le contenu FR
-   stabilisé (sinon double la charge de maintenance à chaque nouvelle machine).
+   familles de vulnérabilités web. **Gros chantier, pas rapide.**
+2. **i18n FR/EN** (Phase 3) — gros chantier transverse, à faire une fois le contenu FR
+   stabilisé (sinon double la charge de maintenance à chaque nouvelle machine). **Pas rapide.**
 
-> ✅ **Phase 2 entièrement terminée** : les 3 derniers items sont livrés — machine cloud
-> mal configurée (**STRATUS**, commande `cloudctl`), chapitre upload de webshell (**NEXUS**,
-> `curl -F` + reverse shell), et machines en pivot (**CITADEL**, hôte interne joignable
-> uniquement via un tunnel `ssh -L` à travers NEXUS rooté). 8 → **11 machines**.
-> Précédemment : **`nc`/reverse shell généralisé** (`machine.altAccess`, réutilisé sur
-> MERIDIAN, PHANTOM **et** NEXUS) et le **solveur automatique** `tools/solve.js`.
+> ✅ **Phase 2 entièrement terminée** (STRATUS cloud / NEXUS webshell / CITADEL pivot, 8 → **11
+> machines**). En Phase 3 : **solveur automatique** (`tools/solve.js`) et **extraction JSON pure
+> des machines** (`tools/export-machines-json.js` → `machines.json`, regex balisées + round-trip)
+> livrés. Il ne reste en Phase 3 que les deux gros chantiers ci-dessus (parser shell, i18n).
 
 ---
 
@@ -168,16 +163,19 @@ reverse shell manuel sur MERIDIAN, `validateMachines` en garde-fou de schéma) :
       quel objet GAME partiel/étranger vers un état sûr. Réutilisé à la fois par le chargement
       normal (`localStorage`) et par l'import de sauvegarde chiffrée (ci-dessous), au lieu de
       deux logiques de migration séparées.
-- [~] **Machines déclaratives (JSON pur)** — *premier pas livré* : `validateMachines(MACHINES)`
-      (dans `machines.js`) fait office de "petit schéma maison" — vérifie id/ip uniques,
-      ports bien formés, `privesc.type` connu, `targetFS`/`rootFile`/`hints` présents. Tourne
-      automatiquement au chargement (`engine.js`) et logue dans la console sans jamais
-      bloquer le jeu ; testé dans `tests/run.js` (0 erreur sur les 8 vraies machines, et une
-      machine volontairement cassée en remonte bien plusieurs). *Reste ouvert* : l'extraction
-      réelle en fichier `.json` séparé (actuellement toujours un littéral JS dans
-      `machines.js`, ce qui reste plus simple pour les champs regex du privesc — un passage
-      en JSON pur demanderait de sérialiser ces regex en chaînes et de les reconstruire au
-      chargement).
+- [x] **Machines déclaratives (JSON pur)** — deux briques livrées :
+      1. `validateMachines(MACHINES)` (dans `machines.js`) fait office de "petit schéma maison"
+         (id/ip uniques, ports bien formés, `privesc.type` connu, `targetFS`/`rootFile`/`hints`
+         présents, forme d'`altAccess`), lancé au chargement et testé dans `tests/run.js`.
+      2. **Extraction réelle en JSON pur** via `tools/export-machines-json.js` : sérialise
+         `MACHINES` en `machines.json` à la racine, en encodant les seules valeurs non-JSON (les
+         RegExp des exploits) sous la forme balisée `{ "__regex__": source, "__flags__": flags }`,
+         reconstructible au chargement. Round-trip garanti (re-parse + reconstruction des regex →
+         re-sérialisation identique). Mode `--check` (CI) qui échoue si `machines.json` a dérivé
+         de `machines.js`. Le runtime continue d'utiliser le littéral JS (choix assumé : c'est ce
+         qui permet d'ouvrir `index.html` en `file://` sans serveur, un `fetch` de `.json` y
+         échouerait) — mais la donnée est désormais prouvée 100% JSON-sérialisable et disponible
+         en fichier `.json` séparé (utile pour l'éditeur de machines de la Phase 4).
 - [x] **Solveur automatique local** — `tools/solve.js` (Node, dev only, jamais embarqué dans
       le jeu) charge le moteur dans un contexte vm isolé et rejoue la solution officielle de
       chaque machine, en vérifiant les 5 jalons (recon/access/privesc/userFlag/rootFlag) et que

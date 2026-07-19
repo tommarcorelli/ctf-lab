@@ -168,3 +168,9 @@ en cas de régression, donc utilisable en CI. Options : `--verbose` (chaque comm
 `--walkthrough` (pas-à-pas propre), `--machine <id>` (une seule machine). Utile comme smoke test
 rapide et comme générateur de walkthrough après une modification du moteur.
 
+`node tools/export-machines-json.js` sérialise les données des machines en **JSON pur**
+(`machines.json` à la racine), en encodant les RegExp des exploits sous forme balisée
+`{ "__regex__": ..., "__flags__": ... }` reconstructible au chargement. Le jeu, lui, continue de
+charger le littéral JS `js/machines.js` (indispensable pour l'ouverture en `file://` sans serveur).
+`--check` échoue si `machines.json` a dérivé de `machines.js` (garde de synchronisation pour la CI).
+
