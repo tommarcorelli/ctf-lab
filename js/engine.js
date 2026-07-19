@@ -60,6 +60,9 @@ function sanitizeGameState(data) {
   if (!data.blueteam.hintsUsed || typeof data.blueteam.hintsUsed !== "object") data.blueteam.hintsUsed = {};
   if (!data.firewall || typeof data.firewall !== "object") data.firewall = { solved: {} }; // migration v6 -> pare-feu CLI
   if (!data.firewall.solved || typeof data.firewall.solved !== "object") data.firewall.solved = {};
+  if (!data.phishing || typeof data.phishing !== "object") data.phishing = { solved: {}, answered: {} }; // migration v7 -> chapitre phishing
+  if (!data.phishing.solved || typeof data.phishing.solved !== "object") data.phishing.solved = {};
+  if (!data.phishing.answered || typeof data.phishing.answered !== "object") data.phishing.answered = {};
   data.saveVersion = SAVE_VERSION;
   return data;
 }
@@ -68,7 +71,7 @@ function loadSave() {
     const raw = localStorage.getItem(SAVE_KEY);
     if (raw) return sanitizeGameState(JSON.parse(raw));
   } catch (e) {}
-  return sanitizeGameState({ score: 0, unlocked: [MACHINES[0].id], progress: {}, hintsUsed: {}, times: {}, badges: {}, bestTimes: {}, jeopardy: { solved: {}, hintsUsed: {} }, blueteam: { solved: {}, answered: {}, hintsUsed: {} }, firewall: { solved: {} }, insaneMode: false });
+  return sanitizeGameState({ score: 0, unlocked: [MACHINES[0].id], progress: {}, hintsUsed: {}, times: {}, badges: {}, bestTimes: {}, jeopardy: { solved: {}, hintsUsed: {} }, blueteam: { solved: {}, answered: {}, hintsUsed: {} }, firewall: { solved: {} }, phishing: { solved: {}, answered: {} }, insaneMode: false });
 }
 function persistSave() {
   localStorage.setItem(SAVE_KEY, JSON.stringify(GAME));
@@ -588,6 +591,7 @@ const KNOWN_COMMANDS = [
   "ftp", "ssh", "sudo", "crontab", "exit", "man", "docker", "export", "import",
   "dir", "type", "net", "schtasks", "icacls", "vim", "nc", "cloudctl", "generate", "replay", "sandbox",
   "blueteam", "incident", "answer", "bthint", "firewall", "iptables",
+  "phishing", "inbox", "mail", "report", "phhint",
 ];
 const PATH_COMMANDS = ["cd", "ls", "cat", "find", "dir", "type", "icacls", "vim"];
 
@@ -823,6 +827,14 @@ const BADGE_DEFS = [
     desc: "Résous tous les scénarios de pare-feu.",
     scope: "global",
     check: () => FIREWALL_SCENARIOS.every((s) => GAME.firewall.solved[s.id]),
+  },
+  {
+    id: "phishing_complete",
+    icon: "📧",
+    label: "Anti-hameçonnage",
+    desc: "Traite correctement tous les mails du chapitre phishing.",
+    scope: "global",
+    check: () => PHISH_MAILS.every((m) => GAME.phishing.solved[m.id]),
   },
 ];
 function checkGlobalBadges() {
@@ -1430,6 +1442,116 @@ function cmdIptables(args) {
   return out(renderFirewall(fw) + footer, allMet ? "t-ok" : "t-out");
 }
 
+// ── Chapitre phishing : analyser une boîte mail (en-têtes, domaines, liens) ──
+const PHISH_MAILS = [
+  {
+    id: "mail-it", points: 150, phishing: true,
+    from: "Support Informatique", fromAddr: "it-support@solenne-secure.com",
+    replyTo: "recovery@mail-secure-login.ru", returnPath: "<bounce@mail-secure-login.ru>", spf: "fail",
+    subject: "URGENT : votre compte sera suspendu sous 24h",
+    date: "lun. 12 janv. 03:41",
+    body: "Cher utilisateur,\nNous avons détecté une activité inhabituelle sur votre compte. Pour éviter une suspension immédiate, confirmez vos identifiants dans les 24 heures en cliquant sur le lien ci-dessous.\n\nCordialement,\nLe service informatique",
+    links: ["http://solenne-hr.verify-account.ru/login?u=admin"],
+    questions: [
+      { id: "verdict", prompt: "Phishing ou légitime ?", accept: ["phishing"], hint: "Un mail interne légitime ne réclame pas tes identifiants en urgence via un lien externe." },
+      { id: "indice", prompt: "Cite UN indicateur (mot-clé) qui trahit le phishing.", contains: true, accept: ["domaine", "typosquat", "lookalike", "url", "lien", "urgence", "spf", "replyto", "reply-to", ".ru", "ru", "tld", "usurp"], hint: "Regarde le domaine du lien / du Reply-To (`.ru`), le SPF (fail) et le ton (urgence)." },
+    ],
+  },
+  {
+    id: "mail-news", points: 100, phishing: false,
+    from: "Communication Solenne", fromAddr: "news@solenne-holdings.com",
+    replyTo: "news@solenne-holdings.com", returnPath: "<news@solenne-holdings.com>", spf: "pass",
+    subject: "Newsletter interne — janvier",
+    date: "mar. 06 janv. 09:12",
+    body: "Bonjour à toutes et à tous,\nRetrouvez les actualités du mois : nouveaux arrivants, projets en cours et dates à retenir. Aucune action de votre part n'est requise.\n\nBonne lecture,\nLa Communication interne",
+    links: [],
+    questions: [
+      { id: "verdict", prompt: "Phishing ou légitime ?", accept: ["legitime", "legit", "légitime", "safe", "ok"], hint: "Domaine cohérent (solenne-holdings.com), SPF pass, aucun lien de connexion ni urgence : rien de suspect." },
+    ],
+  },
+  {
+    id: "mail-invoice", points: 150, phishing: true,
+    from: "Comptabilité Fournisseur", fromAddr: "billing@invoices-247.biz",
+    replyTo: "billing@invoices-247.biz", returnPath: "<noreply@invoices-247.biz>", spf: "fail",
+    subject: "Facture impayée #4471 — action requise",
+    date: "jeu. 15 janv. 18:02",
+    body: "Madame, Monsieur,\nVotre facture reste impayée. Merci d'ouvrir la pièce jointe et de la régulariser sans délai afin d'éviter des pénalités.",
+    attachment: "facture.pdf.exe",
+    links: [],
+    questions: [
+      { id: "verdict", prompt: "Phishing ou légitime ?", accept: ["phishing"], hint: "Une « facture » en `.exe`, ça n'existe pas. Regarde bien la pièce jointe." },
+      { id: "indice", prompt: "Cite UN indicateur (mot-clé) qui trahit le phishing.", contains: true, accept: ["piecejointe", "piece", "exe", "extension", "executable", "doubleextension", "attachement", "attachment", "spf"], hint: "La pièce jointe `facture.pdf.exe` : double extension, un exécutable déguisé en PDF." },
+    ],
+  },
+];
+function cmdPhishing() {
+  const lines = ["📧 Chapitre phishing — analyse ta boîte mail :", ""];
+  PHISH_MAILS.forEach((m) => {
+    const solved = GAME.phishing.solved[m.id];
+    lines.push(`${solved ? "✅" : "📧"} ${m.id.padEnd(12)} ${String(m.points).padStart(3)} pts  « ${m.subject} »`);
+  });
+  lines.push("");
+  lines.push("Ouvre un mail : `mail <id>` · Réponds : `report <id> verdict phishing|legitime` (+ `report <id> indice <mot>` si c'est du phishing) · Indice : `phhint <id> <question>`");
+  return out(lines.join("\n"));
+}
+function cmdMail(args) {
+  const m = PHISH_MAILS.find((mm) => mm.id === args[0]);
+  if (!m) return out("Mail inconnu. Tape `phishing` pour la liste.", "t-err");
+  const ans = GAME.phishing.answered[m.id] || {};
+  const solved = GAME.phishing.solved[m.id];
+  const head = [
+    `De        : ${m.from} <${m.fromAddr}>`,
+    `Reply-To  : ${m.replyTo}`,
+    `Return-Path: ${m.returnPath}`,
+    `Received-SPF: ${m.spf}`,
+    `Date      : ${m.date}`,
+    `Objet     : ${m.subject}`,
+  ];
+  const parts = [`━━ Mail ${m.id}${solved ? " — traité ✅" : ""} ━━`, "", head.join("\n"), "", "─── Corps ───", m.body];
+  if (m.attachment) parts.push("", `📎 Pièce jointe : ${m.attachment}`);
+  if (m.links && m.links.length) parts.push("", "🔗 Liens :", ...m.links.map((l) => "  " + l));
+  const qlines = m.questions.map((q) => `  ${ans[q.id] ? "✅" : "❓"} [${q.id}] ${q.prompt}`);
+  parts.push("", "Questions :", qlines.join("\n"), "", `Réponds : \`report ${m.id} <question> <valeur>\`. Indice : \`phhint ${m.id} <question>\`.`);
+  return out(parts.join("\n"));
+}
+function cmdPhhint(args) {
+  const m = PHISH_MAILS.find((mm) => mm.id === args[0]);
+  if (!m) return out("Mail inconnu. Tape `phishing` pour la liste.", "t-err");
+  const q = m.questions.find((qq) => qq.id === args[1]);
+  if (!q) return out(`Question inconnue. Questions : ${m.questions.map((qq) => qq.id).join(", ")}.`, "t-err");
+  if (GAME.insaneMode) return out("🔥 Mode Insane actif : aucun indice disponible.", "t-err");
+  return out(`💡 ${m.id}/${q.id} : ${q.hint}`, "t-hint");
+}
+function cmdReport(args) {
+  const m = PHISH_MAILS.find((mm) => mm.id === args[0]);
+  if (!m) return out("Mail inconnu. Tape `phishing` pour la liste.", "t-err");
+  const q = m.questions.find((qq) => qq.id === args[1]);
+  if (!q) return out(`Question inconnue pour ${m.id} : ${m.questions.map((qq) => qq.id).join(", ")}.`, "t-err");
+  if (GAME.phishing.solved[m.id]) return out("Mail déjà traité — bien vu !", "t-hint");
+  const value = args.slice(2).join(" ").trim();
+  if (!value) return out(`usage: report ${m.id} ${q.id} <valeur>`, "t-err");
+  const ok = q.contains
+    ? q.accept.some((a) => btNorm(value).includes(btNorm(a)))
+    : q.accept.map(btNorm).includes(btNorm(value));
+  if (!ok) return out("❌ Pas convaincant — relis les en-têtes et le lien.", "t-err");
+  if (!GAME.phishing.answered[m.id]) GAME.phishing.answered[m.id] = {};
+  GAME.phishing.answered[m.id][q.id] = true;
+  const ans = GAME.phishing.answered[m.id];
+  const remaining = m.questions.filter((qq) => !ans[qq.id]);
+  if (remaining.length) {
+    persistSave();
+    return out(`✅ Correct pour « ${q.id} ». Reste : ${remaining.map((qq) => qq.id).join(", ")}.`, "t-ok");
+  }
+  GAME.phishing.solved[m.id] = true;
+  addScore(m.points);
+  toast(`📧 Mail traité : « ${m.subject} » (+${m.points} pts)`);
+  if (typeof playFlagSound === "function") playFlagSound();
+  checkGlobalBadges();
+  persistSave();
+  if (typeof renderSidebar === "function") renderSidebar();
+  return out(`✅ Analyse complète — mail traité ! +${m.points} pts.`, "t-ok");
+}
+
 // ── Détection & capture de flags dans une sortie ─────────────────────────────
 function scanForFlags(machine, text) {
   if (!machine) return;
@@ -1814,6 +1936,11 @@ function dispatch(cmd, args, rawFirst) {
     case "bthint": return cmdBthint(args);
     case "firewall": return cmdFirewall(args);
     case "iptables": return cmdIptables(args);
+    case "phishing":
+    case "inbox": return cmdPhishing();
+    case "mail": return cmdMail(args);
+    case "report": return cmdReport(args);
+    case "phhint": return cmdPhhint(args);
     default: {
       if (SESSION.ctx !== "attacker") {
         const machine = getMachine(SESSION.ctx);
@@ -1845,6 +1972,7 @@ function cmdHelp() {
     "Mode Jeopardy : challenges, challenge <id>, chint <id>, submit <id> <flag>, hashcat <hash>, daily\n" +
     "Mode Blue Team : blueteam, incident <id>, answer <id> <question> <valeur>, bthint <id> <question>\n" +
     "Pare-feu : firewall [<id>|reset|exit], iptables -L | -A/-I/-D INPUT ... | -P INPUT ACCEPT|DROP | -F\n" +
+    "Phishing : phishing (ou inbox), mail <id>, report <id> <question> <valeur>, phhint <id> <question>\n" +
     "Reconnaissance : nmap <ip>, curl <url>, ftp <ip>, nc <ip> <port>, cloudctl ls|get|cp\n" +
     "Accès : ssh <user>@<ip> [-p <port>], curl -F \"file=@<webshell>\" <url> (upload), ssh -L <lport>:<hôte_interne>:<port> <user>@<pivot> (tunnel/pivot)\n" +
     "Système (une fois connecté ou en local) : ls [-la], cd, pwd, cat, find, echo, vim <fichier>, whoami, id, sudo -l, sudo <cmd>, crontab -l, docker ps\n" +

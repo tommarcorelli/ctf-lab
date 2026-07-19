@@ -348,9 +348,15 @@ future revue si tu valides le principe.
 - [x] **Fiche CVE/CVSS pédagogique** — à chaque flag root capturé, une petite fiche
       récapitulative façon CVE fictive s'affiche dans le terminal (CVE générée localement,
       score/vecteur CVSS mappés au type de privesc de la machine)
-- [ ] **Mini chapitre phishing** — analyser un faux mail (en-têtes simulés, lien suspect,
-      domaine usurpé) pour repérer les indicateurs d'une tentative de phishing, en
-      complément du mode Blue Team (Phase 5) mais côté "boîte mail" plutôt que logs serveur
+- [x] **Mini chapitre phishing** — une boîte mail (`PHISH_MAILS`, 3 mails : IT usurpé, newsletter
+      légitime, fausse facture en `.exe`) à analyser façon SOC. `mail <id>` affiche les en-têtes
+      simulés (From, Reply-To, Return-Path, Received-SPF), le corps, les liens et pièces jointes ;
+      `report <id> verdict phishing|legitime` classe le mail, et pour un phishing il faut aussi
+      `report <id> indice <mot-clé>` (matching souple « contains » → indicateur formulé librement :
+      domaine/typosquat/.ru/SPF/urgence/double-extension…). `phhint` donne un indice. Points par
+      mail traité, badge **📧 Anti-hameçonnage**. Complément « boîte mail » du Blue Team. Testé dans
+      `tests/run.js` (liste, affichage, mauvais verdict, indicateur en texte libre, score, badge) et
+      vérifié au rendu.
 - [x] **Narration vocale des indices** — lecture à voix haute des indices/messages via l'API
       native `SpeechSynthesis` du navigateur (zéro dépendance, zéro fichier audio), togglable
       via le bouton 🗣️ dans l'en-tête (désactivé par défaut). Lit les indices (`hint`/`chint`)

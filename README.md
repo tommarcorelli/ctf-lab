@@ -99,6 +99,16 @@ aux espaces, plusieurs formulations acceptées), `bthint <id> <question>` donne 
 incident entièrement résolu rapporte des points ; les résoudre tous débloque le badge **🛡️ Analyste
 SOC**. Tout est généré en dur (aucun IDS ni backend).
 
+## Chapitre phishing
+
+Un pendant « boîte mail » du Blue Team : 3 mails à analyser (un « support IT » usurpé, une newsletter
+légitime, une fausse facture en `.exe`). `phishing` (ou `inbox`) liste les mails, `mail <id>` affiche
+les en-têtes simulés (From, Reply-To, Return-Path, Received-SPF), le corps, les liens et pièces
+jointes. `report <id> verdict phishing|legitime` classe le mail ; pour un phishing, il faut aussi
+`report <id> indice <mot-clé>` (l'indicateur peut être formulé librement : domaine usurpé, `.ru`, SPF
+fail, urgence, double extension…). `phhint <id> <question>` donne un indice. Chaque mail bien traité
+rapporte des points ; tous les traiter débloque le badge **📧 Anti-hameçonnage**.
+
 ## Pare-feu simulé (iptables)
 
 Deux scénarios défensifs où tu lis et modifies un jeu de règles façon `iptables` pour atteindre des

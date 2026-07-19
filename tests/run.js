@@ -955,6 +955,41 @@ section("Pare-feu simulé : iptables (lecture/écriture de règles)", () => {
   assertEqual(get(ctx, "SESSION.firewall"), null, "`firewall exit` quitte le mode pare-feu");
 });
 
+// ── 22. Chapitre phishing : analyse d'une boîte mail ─────────────────────────
+section("Chapitre phishing : analyse de mails", () => {
+  const ctx = freshContext();
+  assert(/phishing/i.test(run(ctx, "phishing").text), "`phishing` liste les mails");
+  const show = run(ctx, "mail mail-it");
+  assert(/Reply-To|Received-SPF/.test(show.text) && /verify-account\.ru/.test(show.text), "`mail` affiche en-têtes + lien suspect");
+
+  // Mauvais verdict rejeté ; indice dispo
+  assert(run(ctx, "report mail-it verdict legitime").cls === "t-err", "classer un phishing comme légitime est rejeté");
+  assert(run(ctx, "phhint mail-it verdict").cls === "t-hint", "`phhint` donne un indice");
+
+  const scoreBefore = get(ctx, "GAME.score");
+
+  // Mail légitime : un seul verdict suffit
+  run(ctx, "report mail-news verdict legitime");
+  assert(get(ctx, "GAME.phishing.solved['mail-news']"), "un mail légitime bien classé est traité");
+
+  // Phishing : verdict + indicateur (formulé librement -> matching 'contains')
+  run(ctx, "report mail-it verdict phishing");
+  assert(!get(ctx, "GAME.phishing.solved['mail-it']"), "le verdict seul ne suffit pas pour un phishing (il faut l'indicateur)");
+  run(ctx, "report mail-it indice le domaine du lien est en .ru et usurpe la marque");
+  assert(get(ctx, "GAME.phishing.solved['mail-it']"), "verdict + indicateur (texte libre) résolvent le phishing");
+
+  run(ctx, "report mail-invoice verdict phishing");
+  run(ctx, "report mail-invoice indice piece jointe .exe (double extension)");
+  assert(get(ctx, "GAME.phishing.solved['mail-invoice']"), "le mail avec pièce jointe .exe est traité");
+
+  assertEqual(get(ctx, "GAME.score"), scoreBefore + 400, "les 3 mails créditent leurs points (100+150+150)");
+  assertEqual(get(ctx, "GAME.badges.phishing_complete"), true, "badge Anti-hameçonnage débloqué");
+
+  const now = get(ctx, "GAME.score");
+  run(ctx, "report mail-news verdict legitime");
+  assertEqual(get(ctx, "GAME.score"), now, "un mail déjà traité ne recrédite pas");
+});
+
 // ── Rapport final ─────────────────────────────────────────────────────────────
 Promise.all(pendingAsync).then(() => {
   console.log(`\n${"─".repeat(60)}`);
