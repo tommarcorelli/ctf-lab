@@ -100,6 +100,17 @@ aux espaces, plusieurs formulations acceptées), `bthint <id> <question>` donne 
 incident entièrement résolu rapporte des points ; les résoudre tous débloque le badge **🛡️ Analyste
 SOC**. Tout est généré en dur (aucun IDS ni backend).
 
+## Reverse engineering
+
+Un chapitre forensic/malware : 2 faux binaires à analyser (un dropper/C2 `update.bin`, un
+vérificateur de licence `license.bin`). `malware` liste les échantillons, `strings <id>` dump les
+chaînes lisibles (domaine C2, clé, mutex…), `disas <id>` affiche un **désassemblage x86 simplifié**
+maison (mnémoniques en dur commentés : `connect` vers le C2, boucle de déchiffrement XOR, `strcmp`
+sur une clé en dur — aucun vrai moteur de désassemblage). Réponds avec `resolve <id> <question>
+<valeur>` (ex. le domaine C2, la clé XOR, la clé de licence), `rehint <id> <question>` pour un
+indice. Chaque échantillon élucidé rapporte des points ; les deux débloquent le badge **🔬 Reverse
+engineer**.
+
 ## Chapitre phishing
 
 Un pendant « boîte mail » du Blue Team : 3 mails à analyser (un « support IT » usurpé, une newsletter

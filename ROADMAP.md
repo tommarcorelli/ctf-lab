@@ -289,9 +289,14 @@ reverse shell manuel sur MERIDIAN, `validateMachines` en garde-fou de schéma) :
       (ex: `nmap -sV`, `awk` avancé) plutôt que tout disponible dès le début.
       *Première brique posée* : le score se traduit déjà en niveau/barre XP dans l'en-tête
       (`levelInfo()` dans `engine.js`) — il manque encore le déblocage de commandes par palier.
-- [ ] **Mini reverse engineering** — un faux binaire "malware" à analyser avec un `strings`
-      simulé et un désassembleur ultra-simplifié maison (mnémoniques inventés ou x86 minimal
-      en dur, pas un vrai moteur de désassemblage) pour un chapitre forensic/malware
+- [x] **Mini reverse engineering** — 2 échantillons (`MALWARE_SAMPLES`, tout en dur) : un dropper/C2
+      (`update.bin`) et un vérificateur de licence (`license.bin`). `strings <id>` dump les chaînes
+      lisibles (domaine C2, clé, mutex…), `disas <id>` affiche un **désassemblage x86 simplifié**
+      (pas de vrai moteur : mnémoniques en dur avec commentaires — `connect` C2, boucle XOR, `strcmp`
+      sur une clé en dur). Questions via `resolve <id> <question> <valeur>` (matching souple pour la
+      nature/faille, exact pour clé/hexa), `rehint` pour un indice. Points par échantillon, badge
+      **🔬 Reverse engineer**. Testé dans `tests/run.js` (liste, strings, disas, mauvaise réponse,
+      résolution des 2 échantillons, score, badge) et vérifié au rendu.
 - [ ] **Terminal multi-panes façon tmux** — split horizontal/vertical simulé au sein d'un même
       onglet (un pane shell, un pane logs qui défile) pour les machines plus avancées
 - [ ] **Mode "fantôme" sur le replay** — en s'appuyant sur le replay local déjà prévu en Phase 4 :

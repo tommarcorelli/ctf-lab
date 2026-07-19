@@ -63,6 +63,9 @@ function sanitizeGameState(data) {
   if (!data.phishing || typeof data.phishing !== "object") data.phishing = { solved: {}, answered: {} }; // migration v7 -> chapitre phishing
   if (!data.phishing.solved || typeof data.phishing.solved !== "object") data.phishing.solved = {};
   if (!data.phishing.answered || typeof data.phishing.answered !== "object") data.phishing.answered = {};
+  if (!data.reverse || typeof data.reverse !== "object") data.reverse = { solved: {}, answered: {} }; // migration v8 -> reverse engineering
+  if (!data.reverse.solved || typeof data.reverse.solved !== "object") data.reverse.solved = {};
+  if (!data.reverse.answered || typeof data.reverse.answered !== "object") data.reverse.answered = {};
   data.saveVersion = SAVE_VERSION;
   return data;
 }
@@ -71,7 +74,7 @@ function loadSave() {
     const raw = localStorage.getItem(SAVE_KEY);
     if (raw) return sanitizeGameState(JSON.parse(raw));
   } catch (e) {}
-  return sanitizeGameState({ score: 0, unlocked: [MACHINES[0].id], progress: {}, hintsUsed: {}, times: {}, badges: {}, bestTimes: {}, jeopardy: { solved: {}, hintsUsed: {} }, blueteam: { solved: {}, answered: {}, hintsUsed: {} }, firewall: { solved: {} }, phishing: { solved: {}, answered: {} }, insaneMode: false });
+  return sanitizeGameState({ score: 0, unlocked: [MACHINES[0].id], progress: {}, hintsUsed: {}, times: {}, badges: {}, bestTimes: {}, jeopardy: { solved: {}, hintsUsed: {} }, blueteam: { solved: {}, answered: {}, hintsUsed: {} }, firewall: { solved: {} }, phishing: { solved: {}, answered: {} }, reverse: { solved: {}, answered: {} }, insaneMode: false });
 }
 function persistSave() {
   localStorage.setItem(SAVE_KEY, JSON.stringify(GAME));
@@ -592,6 +595,7 @@ const KNOWN_COMMANDS = [
   "dir", "type", "net", "schtasks", "icacls", "vim", "nc", "arp", "cloudctl", "generate", "replay", "sandbox",
   "blueteam", "incident", "answer", "bthint", "firewall", "iptables",
   "phishing", "inbox", "mail", "report", "phhint",
+  "malware", "re", "strings", "disas", "disasm", "resolve", "rehint",
 ];
 const PATH_COMMANDS = ["cd", "ls", "cat", "find", "dir", "type", "icacls", "vim"];
 
@@ -835,6 +839,14 @@ const BADGE_DEFS = [
     desc: "Traite correctement tous les mails du chapitre phishing.",
     scope: "global",
     check: () => PHISH_MAILS.every((m) => GAME.phishing.solved[m.id]),
+  },
+  {
+    id: "reverse_complete",
+    icon: "🔬",
+    label: "Reverse engineer",
+    desc: "Analyse tous les binaires du chapitre reverse engineering.",
+    scope: "global",
+    check: () => MALWARE_SAMPLES.every((s) => GAME.reverse.solved[s.id]),
   },
 ];
 function checkGlobalBadges() {
@@ -1552,6 +1564,122 @@ function cmdReport(args) {
   return out(`✅ Analyse complète — mail traité ! +${m.points} pts.`, "t-ok");
 }
 
+// ── Mini reverse engineering : `strings` + désassembleur maison simplifié ────
+// Les binaires sont 100% en dur (chaînes + pseudo-désassemblage) : aucun vrai parsing
+// de fichier, aucun moteur de désassemblage réel — but pédagogique.
+const MALWARE_SAMPLES = [
+  {
+    id: "dropper", filename: "update.bin", points: 200,
+    title: "Un « updater » suspect ramassé sur un poste",
+    strings: [
+      "/lib64/ld-linux-x86-64.so.2", "libc.so.6", "socket", "connect", "gethostbyname", "system",
+      "update.deliv-cdn.ru", "/tmp/.sysupd", "Mozilla/5.0 (X11; Linux) UpdaterBot/1.0",
+      "GLOBAL_SYS_UPDATE_MTX", "%s/beacon?id=%s", "decrypting payload...",
+    ],
+    disasm: [
+      "0x1140  push  rbp",
+      "0x1141  mov   rbp, rsp",
+      "0x1149  lea   rdi, [\"update.deliv-cdn.ru\"]",
+      "0x1150  call  gethostbyname",
+      "0x1155  call  socket",
+      "0x115a  call  connect            ; ouvre une connexion sortante (C2)",
+      "0x1160  mov   cl, 0x37           ; clé XOR = 0x37",
+      "0x1163 .decrypt:",
+      "0x1163  xor   byte [rsi], cl     ; boucle de déchiffrement XOR",
+      "0x1166  inc   rsi",
+      "0x1169  loop  .decrypt",
+      "0x116e  call  system             ; exécute la charge déchiffrée",
+    ],
+    questions: [
+      { id: "c2", prompt: "Domaine de commande & contrôle (C2) ?", contains: true, accept: ["update.deliv-cdn.ru", "deliv-cdn.ru", "deliv-cdn"], hint: "Le domaine chargé juste avant `gethostbyname`/`connect`." },
+      { id: "xorkey", prompt: "Clé XOR de déchiffrement (en hexa) ?", accept: ["0x37", "37"], hint: "Le `mov cl, ...` juste avant la boucle `.decrypt`." },
+      { id: "nature", prompt: "Nature du programme (un mot) ?", contains: true, accept: ["c2", "beacon", "backdoor", "dropper", "rat", "malware", "commandandcontrol"], hint: "Il rappelle un serveur externe, déchiffre puis exécute une charge : porte dérobée / C2." },
+    ],
+  },
+  {
+    id: "authcheck", filename: "license.bin", points: 150,
+    title: "Un vérificateur de licence à contourner",
+    strings: [
+      "Enter license key: ", "Invalid key.", "Access granted.", "R3v3rs3_M3_2026!", "libc.so.6", "strcmp", "printf",
+    ],
+    disasm: [
+      "0x1200  lea   rdi, [rbp-0x40]      ; saisie utilisateur",
+      "0x1207  lea   rsi, [\"R3v3rs3_M3_2026!\"]  ; clé attendue, en dur",
+      "0x120e  call  strcmp              ; compare l'entrée à la clé",
+      "0x1213  test  eax, eax",
+      "0x1215  jnz   .fail",
+      "0x1217  lea   rdi, [\"Access granted.\"]",
+      "0x121e  call  printf",
+      "0x1223 .fail:",
+      "0x1223  lea   rdi, [\"Invalid key.\"]",
+      "0x122a  call  printf",
+    ],
+    questions: [
+      { id: "key", prompt: "Clé de licence valide ?", accept: ["R3v3rs3_M3_2026!"], hint: "La chaîne comparée par `strcmp` est directement dans le binaire (`strings`)." },
+      { id: "faille", prompt: "Pourquoi c'est cassé (un mot / une expression) ?", contains: true, accept: ["endur", "hardcoded", "strcmp", "clenclair", "cleenclair", "comparaison", "motdepasseendur", "cleendur"], hint: "La clé est comparée en clair, codée en dur dans le binaire." },
+    ],
+  },
+];
+function reSample(idOrFile) {
+  return MALWARE_SAMPLES.find((s) => s.id === idOrFile || s.filename === idOrFile);
+}
+function cmdMalware() {
+  const lines = ["🔬 Reverse engineering — échantillons à analyser :", ""];
+  MALWARE_SAMPLES.forEach((s) => {
+    const solved = GAME.reverse.solved[s.id];
+    lines.push(`${solved ? "✅" : "🔬"} ${s.id.padEnd(10)} ${String(s.points).padStart(3)} pts  ${s.filename.padEnd(12)} ${s.title}`);
+  });
+  lines.push("");
+  lines.push("Analyse : `strings <id>` (chaînes lisibles) · `disas <id>` (désassemblage) · Réponds : `resolve <id> <question> <valeur>` · Indice : `rehint <id> <question>`");
+  return out(lines.join("\n"));
+}
+function cmdStrings(args) {
+  const s = reSample(args[0]);
+  if (!s) return out("usage: strings <id|fichier> — cible un échantillon (voir `malware`).", "t-err");
+  return out(`# strings ${s.filename}\n` + s.strings.join("\n"));
+}
+function cmdDisas(args) {
+  const s = reSample(args[0]);
+  if (!s) return out("usage: disas <id|fichier> — cible un échantillon (voir `malware`).", "t-err");
+  const q = s.questions.map((qq) => qq.id).join(", ");
+  return out(`# désassemblage simplifié de ${s.filename}\n\n` + s.disasm.join("\n") + `\n\nQuestions : ${q}. Réponds avec \`resolve ${s.id} <question> <valeur>\`.`);
+}
+function cmdRehint(args) {
+  const s = reSample(args[0]);
+  if (!s) return out("Échantillon inconnu. Tape `malware` pour la liste.", "t-err");
+  const q = s.questions.find((qq) => qq.id === args[1]);
+  if (!q) return out(`Question inconnue. Questions : ${s.questions.map((qq) => qq.id).join(", ")}.`, "t-err");
+  if (GAME.insaneMode) return out("🔥 Mode Insane actif : aucun indice disponible.", "t-err");
+  return out(`💡 ${s.id}/${q.id} : ${q.hint}`, "t-hint");
+}
+function cmdResolve(args) {
+  const s = reSample(args[0]);
+  if (!s) return out("Échantillon inconnu. Tape `malware` pour la liste.", "t-err");
+  const q = s.questions.find((qq) => qq.id === args[1]);
+  if (!q) return out(`Question inconnue pour ${s.id} : ${s.questions.map((qq) => qq.id).join(", ")}.`, "t-err");
+  if (GAME.reverse.solved[s.id]) return out("Échantillon déjà analysé — bien joué !", "t-hint");
+  const value = args.slice(2).join(" ").trim();
+  if (!value) return out(`usage: resolve ${s.id} ${q.id} <valeur>`, "t-err");
+  const ok = q.contains ? q.accept.some((a) => btNorm(value).includes(btNorm(a))) : q.accept.map(btNorm).includes(btNorm(value));
+  if (!ok) return out("❌ Incorrect — relis les `strings` / le `disas`.", "t-err");
+  if (!GAME.reverse.answered[s.id]) GAME.reverse.answered[s.id] = {};
+  GAME.reverse.answered[s.id][q.id] = true;
+  const ans = GAME.reverse.answered[s.id];
+  const remaining = s.questions.filter((qq) => !ans[qq.id]);
+  if (remaining.length) {
+    persistSave();
+    return out(`✅ Correct pour « ${q.id} ». Reste : ${remaining.map((qq) => qq.id).join(", ")}.`, "t-ok");
+  }
+  GAME.reverse.solved[s.id] = true;
+  addScore(s.points);
+  toast(`🔬 Échantillon analysé : ${s.filename} (+${s.points} pts)`);
+  if (typeof playFlagSound === "function") playFlagSound();
+  checkGlobalBadges();
+  persistSave();
+  if (typeof renderSidebar === "function") renderSidebar();
+  return out(`✅ Analyse complète — échantillon « ${s.filename} » élucidé ! +${s.points} pts.`, "t-ok");
+}
+
 // ── Détection & capture de flags dans une sortie ─────────────────────────────
 function scanForFlags(machine, text) {
   if (!machine) return;
@@ -1942,6 +2070,13 @@ function dispatch(cmd, args, rawFirst) {
     case "mail": return cmdMail(args);
     case "report": return cmdReport(args);
     case "phhint": return cmdPhhint(args);
+    case "malware":
+    case "re": return cmdMalware();
+    case "strings": return cmdStrings(args);
+    case "disas":
+    case "disasm": return cmdDisas(args);
+    case "resolve": return cmdResolve(args);
+    case "rehint": return cmdRehint(args);
     default: {
       if (SESSION.ctx !== "attacker") {
         const machine = getMachine(SESSION.ctx);
@@ -1974,6 +2109,7 @@ function cmdHelp() {
     "Mode Blue Team : blueteam, incident <id>, answer <id> <question> <valeur>, bthint <id> <question>\n" +
     "Pare-feu : firewall [<id>|reset|exit], iptables -L | -A/-I/-D INPUT ... | -P INPUT ACCEPT|DROP | -F\n" +
     "Phishing : phishing (ou inbox), mail <id>, report <id> <question> <valeur>, phhint <id> <question>\n" +
+    "Reverse : malware (liste), strings <id>, disas <id>, resolve <id> <question> <valeur>, rehint <id> <question>\n" +
     "Reconnaissance : nmap <ip>, nmap <cidr> (balayage de sous-réseau via un pivot), arp -a, curl <url>, ftp <ip>, nc <ip> <port>, cloudctl ls|get|cp\n" +
     "Accès : ssh <user>@<ip> [-p <port>], curl -F \"file=@<webshell>\" <url> (upload), ssh -L <lport>:<hôte_interne>:<port> <user>@<pivot> (tunnel/pivot)\n" +
     "Système (une fois connecté ou en local) : ls [-la], cd, pwd, cat, find, echo, vim <fichier>, whoami, id, sudo -l, sudo <cmd>, crontab -l, docker ps\n" +

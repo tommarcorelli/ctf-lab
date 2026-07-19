@@ -1020,6 +1020,40 @@ section("Sous-réseau simulé : nmap <cidr> + arp via pivot", () => {
   assert(/citadel/i.test(run(ctx, "nmap 172.16.20.10").text), "l'hôte exploitable du segment (CITADEL) répond au scan ciblé");
 });
 
+// ── 24. Mini reverse engineering : strings + désassembleur simulé ────────────
+section("Reverse engineering : strings / disas / resolve", () => {
+  const ctx = freshContext();
+  assert(/reverse/i.test(run(ctx, "malware").text), "`malware` liste les échantillons");
+  assert(/deliv-cdn\.ru/.test(run(ctx, "strings dropper").text), "`strings` révèle les chaînes en dur (dont le C2)");
+  const d = run(ctx, "disas dropper");
+  assert(/xor|connect/i.test(d.text), "`disas` montre le pseudo-désassemblage");
+
+  // Mauvaise réponse rejetée ; indice
+  assert(run(ctx, "resolve dropper c2 exemple.com").cls === "t-err", "un mauvais C2 est rejeté");
+  assert(run(ctx, "rehint dropper c2").cls === "t-hint", "`rehint` donne un indice");
+
+  const scoreBefore = get(ctx, "GAME.score");
+
+  // dropper : 3 questions (dont matching 'contains' et hexa)
+  run(ctx, "resolve dropper c2 le domaine est deliv-cdn.ru");
+  run(ctx, "resolve dropper xorkey 0x37");
+  assert(!get(ctx, "GAME.reverse.solved['dropper']"), "il faut répondre à toutes les questions");
+  run(ctx, "resolve dropper nature backdoor c2");
+  assert(get(ctx, "GAME.reverse.solved['dropper']"), "dropper analysé après les 3 réponses");
+
+  // authcheck : clé en dur + faille
+  run(ctx, "resolve authcheck key R3v3rs3_M3_2026!");
+  run(ctx, "resolve authcheck faille clé comparée en dur (strcmp)");
+  assert(get(ctx, "GAME.reverse.solved['authcheck']"), "authcheck résolu (clé + faille)");
+
+  assertEqual(get(ctx, "GAME.score"), scoreBefore + 350, "les 2 échantillons créditent leurs points (200+150)");
+  assertEqual(get(ctx, "GAME.badges.reverse_complete"), true, "badge Reverse engineer débloqué");
+
+  const now = get(ctx, "GAME.score");
+  run(ctx, "resolve dropper c2 deliv-cdn.ru");
+  assertEqual(get(ctx, "GAME.score"), now, "un échantillon déjà résolu ne recrédite pas");
+});
+
 // ── Rapport final ─────────────────────────────────────────────────────────────
 Promise.all(pendingAsync).then(() => {
   console.log(`\n${"─".repeat(60)}`);
