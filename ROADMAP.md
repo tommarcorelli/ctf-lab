@@ -166,9 +166,14 @@ reverse shell manuel sur MERIDIAN, `validateMachines` en garde-fou de schéma) :
       `machines.js`, ce qui reste plus simple pour les champs regex du privesc — un passage
       en JSON pur demanderait de sérialiser ces regex en chaînes et de les reconstruire au
       chargement).
-- [ ] **Solveur automatique local** — un script Node (dev only, pas embarqué dans le jeu) qui
-      rejoue la solution officielle de chaque machine pour garantir qu'aucune régression ne
-      casse un chemin d'exploit après une modif du moteur
+- [x] **Solveur automatique local** — `tools/solve.js` (Node, dev only, jamais embarqué dans
+      le jeu) charge le moteur dans un contexte vm isolé et rejoue la solution officielle de
+      chaque machine, en vérifiant les 5 jalons (recon/access/privesc/userFlag/rootFlag) et que
+      le flag root récupéré correspond bien à `machine.rootFile.content`. Code de sortie non-nul
+      si un chemin d'exploit casse. Options : `--verbose` (chaque commande + sortie du moteur),
+      `--walkthrough` (pas-à-pas propre), `--machine <id>` (une seule machine). Complémentaire
+      de `tests/run.js` : ici c'est un smoke test dédié aux chemins d'exploit + générateur de
+      walkthrough.
 - [x] **PWA installable** — manifest + service worker (toujours vanilla) pour jouer hors-ligne
 - [ ] **i18n FR/EN** — actuellement tout est codé en dur en français
 

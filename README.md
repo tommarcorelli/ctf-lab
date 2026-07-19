@@ -147,3 +147,10 @@ l'exploitation complète des 8 machines (recon → accès → privesc → 2 flag
 remboursement de `reset`, la résolution des 6 défis Jeopardy et le mode Insane. À lancer après
 toute modification de `engine.js` ou `machines.js` pour éviter une régression silencieuse.
 
+`node tools/solve.js` est un **solveur automatique** (dev only, jamais embarqué dans le jeu) :
+il rejoue la solution officielle des 8 machines dans le vrai moteur et vérifie qu'aucun chemin
+d'exploit n'est cassé (les 5 jalons + le flag root de chaque machine). Code de sortie non-nul
+en cas de régression, donc utilisable en CI. Options : `--verbose` (chaque commande + sa sortie),
+`--walkthrough` (pas-à-pas propre), `--machine <id>` (une seule machine). Utile comme smoke test
+rapide et comme générateur de walkthrough après une modification du moteur.
+
