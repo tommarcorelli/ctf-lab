@@ -83,9 +83,10 @@
     },
     "privesc": {
       "type": "sudo-gtfobins",
-      "exploitCmdRegex": {
-        "__regex__": "^sudo\\s+(\\/usr\\/bin\\/)?less\\s+\\/var\\/log\\/nginx\\/access\\.log$",
-        "__flags__": ""
+      "exploit": {
+        "tool": "sudo",
+        "bin": "less",
+        "pager": true
       },
       "pagerEscapeRegex": {
         "__regex__": "^!\\/?(bin\\/)?sh$|^!bash$",
@@ -865,9 +866,10 @@
     },
     "privesc": {
       "type": "sudo-direct",
-      "exploitCmdRegex": {
-        "__regex__": "^sudo\\s+(\\/usr\\/bin\\/)?env\\s+\\/bin\\/sh$",
-        "__flags__": ""
+      "exploit": {
+        "tool": "sudo",
+        "bin": "env",
+        "spawn": "/bin/sh"
       },
       "enterMsg": "# (shell root obtenu via env -- technique GTFOBins)"
     },

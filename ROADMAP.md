@@ -248,10 +248,15 @@ reverse shell manuel sur MERIDIAN, `validateMachines` en garde-fou de schéma) :
       passage : bug corrigé — `ls` sans argument listait le home au lieu du répertoire courant.)*
       custom (JSON collé par l'utilisateur) pour s'entraîner aux commandes sans notion de
       flag ni de scoring
-- [ ] **Vrai mini-langage de script pour les exploits** — remplacer les regex ad-hoc de
-      `privesc` par un petit DSL interne (toujours vanilla JS, interprété maison) décrivant
-      les conditions d'exploitation, pour rendre l'ajout de nouvelles classes de vulnérabilité
-      (au-delà de sudo/cron/SUID) plus simple sans toucher au moteur
+- [x] **Vrai mini-langage de script pour les exploits** — DSL déclaratif `privesc.exploit`
+      interprété maison (`exploitMatches` dans `engine.js`) qui remplace le `exploitCmdRegex`
+      ad-hoc : `{ tool:"sudo", bin:"env", spawn:"/bin/sh" }` (lance un shell), `{ ..., pager:true }`
+      (binaire pager type less/man), `{ ..., raw:"..." }` (commande exacte normalisée), ou
+      `{ regex:"..." }` (échappatoire). Le moteur essaie le DSL puis retombe sur `exploitCmdRegex`
+      (rétrocompatible : les machines non migrées gardent leur regex). **NIMBUS** (less/pager) et
+      **STRATUS** (env/spawn) ont été migrés au DSL (regex supprimé) et restent pleinement jouables
+      (solveur 12/12). Ajouter une nouvelle variante GTFOBins ne demande plus d'écrire un regex.
+      Testé dans `tests/run.js` (spawn/pager/repli, machines migrées).
 
 ## 🤯 Phase 5 — Idées de fou malade (toujours 100% vanilla JS, sans dépendance, sans backend)
 

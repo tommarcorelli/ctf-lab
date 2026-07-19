@@ -2622,7 +2622,7 @@ function cmdDocker(args, rawFirst) {
     return out(`'docker' n'est pas reconnu en tant que commande interne ou externe, un programme exécutable ou un fichier de commandes.`, "t-err");
   }
   // Escalade via le groupe docker (équivalent root) : docker run -v /:/mnt --rm -it alpine chroot /mnt sh
-  if (machine.privesc.type === "docker-group" && machine.privesc.exploitCmdRegex.test(rawFirst.trim())) {
+  if (machine.privesc.type === "docker-group" && exploitMatches(machine.privesc, rawFirst)) {
     SESSION.user = "root";
     SESSION.cwd = "/root";
     GAME.progress[machine.id].privesc = true;
@@ -2645,7 +2645,7 @@ function cmdFind(args, rawFirst) {
   // Exploit générique (obsidian) : find ... -exec /bin/sh -p \; -quit
   if (SESSION.ctx !== "attacker") {
     const machine = getMachine(SESSION.ctx);
-    if (machine.privesc.type === "suid-binary" && machine.privesc.exploitCmdRegex.test(rawFirst.trim())) {
+    if (machine.privesc.type === "suid-binary" && exploitMatches(machine.privesc, rawFirst)) {
       SESSION.user = "root";
       SESSION.cwd = "/root";
       GAME.progress[machine.id].privesc = true;
@@ -3151,6 +3151,31 @@ function tryPassword(pwd) {
   return grantAccess(machine, user);
 }
 
+// ── Mini-DSL d'exploits : décrire une condition d'exploitation sans regex ────
+// Une machine peut définir `privesc.exploit = { tool, bin, spawn|pager|raw|regex }`
+// au lieu d'un `exploitCmdRegex` ad-hoc. Interprété maison, avec repli sur le regex.
+//   { tool:"sudo", bin:"env",  spawn:"/bin/sh" }  -> matche `sudo [/usr/bin/]env /bin/sh`
+//   { tool:"sudo", bin:"less", pager:true }        -> matche `sudo [/usr/bin/]less <fichier>`
+//   { tool:"sudo", bin:"tar",  raw:"sudo tar ..." }-> matche la commande exacte (normalisée)
+//   { regex:"^...$" }                              -> échappatoire regex explicite
+function reEsc(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+function exploitMatches(privesc, rawCmd) {
+  const cmd = String(rawCmd || "").trim();
+  const e = privesc.exploit;
+  if (e) {
+    const norm = cmd.replace(/\s+/g, " ");
+    if (e.tool === "sudo") {
+      const bin = `(?:/usr/bin/)?${reEsc(e.bin)}`;
+      if (e.pager) return new RegExp(`^sudo ${bin}(?: \\S.*)?$`).test(norm);
+      if (e.spawn) return new RegExp(`^sudo ${bin} ${reEsc(e.spawn)}$`).test(norm);
+      if (e.raw) return norm === String(e.raw).trim().replace(/\s+/g, " ");
+    }
+    if (e.regex) return new RegExp(e.regex).test(cmd);
+    return false;
+  }
+  return privesc.exploitCmdRegex ? privesc.exploitCmdRegex.test(cmd) : false;
+}
+
 function cmdSudo(args, rawFirst) {
   if (SESSION.ctx === "attacker") return out("sudo: la commande sudo n'est pas nécessaire ici.", "t-err");
   const machine = getMachine(SESSION.ctx);
@@ -3161,11 +3186,11 @@ function cmdSudo(args, rawFirst) {
     return out(`sudo: ${SESSION.user} : compte verrouillé après trop de tentatives échouées.\nReconnecte-toi (ssh) pour réessayer.`, "t-err");
   }
   if (args[0] === "-l") return out(machine.targetFS.sudoL);
-  if (machine.privesc.type === "sudo-gtfobins" && machine.privesc.exploitCmdRegex.test(rawFirst.trim())) {
+  if (machine.privesc.type === "sudo-gtfobins" && exploitMatches(machine.privesc, rawFirst)) {
     SESSION.pagerMode = machine.id;
     return out(machine.privesc.enterMsg, "t-warn");
   }
-  if (machine.privesc.type === "sudo-direct" && machine.privesc.exploitCmdRegex.test(rawFirst.trim())) {
+  if (machine.privesc.type === "sudo-direct" && exploitMatches(machine.privesc, rawFirst)) {
     SESSION.user = "root";
     SESSION.cwd = parentOf(machine.rootFile.path);
     GAME.progress[machine.id].privesc = true;

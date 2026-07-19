@@ -52,7 +52,8 @@ const MACHINES = [
     },
     privesc: {
       type: "sudo-gtfobins",
-      exploitCmdRegex: /^sudo\s+(\/usr\/bin\/)?less\s+\/var\/log\/nginx\/access\.log$/,
+      // DSL d'exploit (remplace le regex ad-hoc) : sudo sur un pager `less`
+      exploit: { tool: "sudo", bin: "less", pager: true },
       pagerEscapeRegex: /^!\/?(bin\/)?sh$|^!bash$/,
       enterMsg:
         "10.10.10.1 - - [GET /] 200\n10.10.10.7 - - [GET /favicon.ico] 404\n(le pager less s'est ouvert avec les droits root)\n\nAstuce : less permet d'exécuter une commande shell depuis le pager avec !<commande>.\nTape : !sh",
@@ -598,7 +599,8 @@ const MACHINES = [
     },
     privesc: {
       type: "sudo-direct",
-      exploitCmdRegex: /^sudo\s+(\/usr\/bin\/)?env\s+\/bin\/sh$/,
+      // DSL d'exploit (remplace le regex ad-hoc) : sudo `env` qui lance un shell
+      exploit: { tool: "sudo", bin: "env", spawn: "/bin/sh" },
       enterMsg: "# (shell root obtenu via env -- technique GTFOBins)",
     },
     rootFile: { path: "/root/root.txt", content: "FLAG{stratus_root_env_gtfobins}" },

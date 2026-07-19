@@ -1176,6 +1176,25 @@ section("Hot-seat : profils de joueur multiples", () => {
   assert(/➤ joueur1/.test(list.text) || /➤\s+joueur1/.test(list.text), "le profil courant est marqué ➤");
 });
 
+// ── 30. DSL d'exploits : privesc décrite sans regex ad-hoc ───────────────────
+section("DSL d'exploits : exploitMatches", () => {
+  const ctx = freshContext();
+  // Spec sudo + spawn (env)
+  assert(get(ctx, `exploitMatches({exploit:{tool:'sudo',bin:'env',spawn:'/bin/sh'}}, 'sudo env /bin/sh')`), "DSL spawn : sudo env /bin/sh matche");
+  assert(get(ctx, `exploitMatches({exploit:{tool:'sudo',bin:'env',spawn:'/bin/sh'}}, 'sudo /usr/bin/env /bin/sh')`), "DSL spawn : le chemin /usr/bin/ est toléré");
+  assert(!get(ctx, `exploitMatches({exploit:{tool:'sudo',bin:'env',spawn:'/bin/sh'}}, 'sudo env id')`), "DSL spawn : une autre commande ne matche pas");
+  // Spec pager (less)
+  assert(get(ctx, `exploitMatches({exploit:{tool:'sudo',bin:'less',pager:true}}, 'sudo less /var/log/nginx/access.log')`), "DSL pager : sudo less <fichier> matche");
+  assert(!get(ctx, `exploitMatches({exploit:{tool:'sudo',bin:'less',pager:true}}, 'sudo cat /etc/passwd')`), "DSL pager : un autre binaire ne matche pas");
+  // Repli sur le regex ad-hoc quand pas de DSL
+  assert(get(ctx, `exploitMatches({exploitCmdRegex:/^sudo tar$/}, 'sudo tar')`), "repli : exploitCmdRegex utilisé sans DSL");
+
+  // Les machines migrées vers le DSL (NIMBUS less, STRATUS env) n'ont plus de regex...
+  assert(get(ctx, `MACHINES.find(m=>m.id==='nimbus').privesc.exploit && !MACHINES.find(m=>m.id==='nimbus').privesc.exploitCmdRegex`), "NIMBUS utilise le DSL (plus de exploitCmdRegex)");
+  assert(get(ctx, `MACHINES.find(m=>m.id==='stratus').privesc.exploit && !MACHINES.find(m=>m.id==='stratus').privesc.exploitCmdRegex`), "STRATUS utilise le DSL (plus de exploitCmdRegex)");
+  // ...et restent entièrement jouables (rejoué par le solveur + la boucle des 12 machines plus haut)
+});
+
 // ── Rapport final ─────────────────────────────────────────────────────────────
 Promise.all(pendingAsync).then(() => {
   console.log(`\n${"─".repeat(60)}`);
