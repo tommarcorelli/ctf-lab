@@ -33,6 +33,7 @@
     <button id="fx-toggle" class="icon-toggle" type="button" title="Effets visuels (particules, glow)">✨</button>
     <button id="editor-toggle" class="icon-toggle" type="button" title="Créer une machine (éditeur)">🛠️</button>
     <button id="replay-toggle" class="icon-toggle" type="button" title="Rejouer la session (replay)">▶️</button>
+    <button id="sandbox-toggle" class="icon-toggle" type="button" title="Bac à sable libre (FS custom)">🧪</button>
   </header>
 
   <main class="layout">
@@ -112,6 +113,28 @@
         <button id="replay-download" class="editor-btn" type="button">Télécharger .json</button>
         <button id="replay-open" class="editor-btn" type="button">Charger un replay</button>
         <span id="replay-status" class="replay-status" aria-live="polite"></span>
+      </div>
+    </div>
+  </div>
+
+  <div id="sandbox-modal" class="editor-modal hidden" role="dialog" aria-modal="true" aria-labelledby="sandbox-title">
+    <div class="editor-card">
+      <div class="editor-head">
+        <h2 id="sandbox-title">🧪 Bac à sable libre</h2>
+        <button id="sandbox-close" class="editor-close" type="button" aria-label="Fermer le bac à sable">✕</button>
+      </div>
+      <p class="editor-desc">
+        Monte un système de fichiers à toi pour t'entraîner aux commandes (<code>ls</code>,
+        <code>cat</code>, <code>find</code>, <code>grep</code>, <code>vim</code>, pipes…),
+        <strong>sans flag ni score</strong>. Format : un objet <code>{ "chemin": "contenu" }</code>
+        (une chaîne = fichier, <code>{}</code> ou un <code>/</code> final = dossier ; chemins relatifs
+        à <code>~</code> sauf s'ils commencent par <code>/</code>).
+      </p>
+      <textarea id="sandbox-json" class="editor-json" spellcheck="false" aria-label="Arborescence JSON du bac à sable"></textarea>
+      <div id="sandbox-msg" class="editor-msg" role="status" aria-live="polite"></div>
+      <div class="editor-actions">
+        <button id="sandbox-mount" class="editor-btn primary" type="button">Monter le FS</button>
+        <button id="sandbox-demo" class="editor-btn" type="button">FS de démo</button>
       </div>
     </div>
   </div>

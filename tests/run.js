@@ -848,6 +848,43 @@ section("Générateur procédural : machines valides et jouables", () => {
   assert(get(ctx, `GAME.unlocked.includes(${JSON.stringify(gen.machine.id)})`), "la machine générée par la commande est déverrouillée");
 });
 
+// ── 19. Bac à sable libre : FS custom, sans flag ni scoring ──────────────────
+section("Bac à sable libre : FS custom, sans flag ni score", () => {
+  const ctx = freshContext();
+  const scoreBefore = get(ctx, "GAME.score");
+
+  const m = run(ctx, "sandbox");
+  assert(m.cls !== "t-err" && /Bac à sable monté/.test(m.text), "`sandbox` monte le FS de démo");
+  assertEqual(get(ctx, "SESSION.sandbox"), true, "le mode sandbox est actif");
+  assertEqual(get(ctx, "SESSION.user"), "hacker", "on est `hacker` dans le bac à sable");
+
+  const ls = run(ctx, "ls");
+  assert(/README\.txt/.test(ls.text) && /notes/.test(ls.text), "ls liste le FS de démo");
+  assert(/entraîne-toi/.test(run(ctx, "cat README.txt").text), "cat lit un fichier du sandbox");
+
+  run(ctx, "cd notes");
+  assert(/todo\.txt/.test(run(ctx, "ls").text), "cd + ls dans un sous-dossier custom");
+  run(ctx, "cd ..");
+
+  assertEqual(run(ctx, "cat data/users.csv | cut -d , -f 2 | sort | head -1").text, "alice", "pipe cut/sort/head sur un fichier custom");
+  assert(/POST/.test(run(ctx, "cat logs/access.log | grep POST").text), "grep (en pipe) filtre les lignes d'un fichier custom");
+
+  // Aucun scoring, aucune capture de flag dans le bac à sable
+  run(ctx, "echo FLAG{ceci_nest_pas_capture}");
+  assertEqual(get(ctx, "GAME.score"), scoreBefore, "le bac à sable ne modifie jamais le score");
+
+  run(ctx, "exit");
+  assertEqual(get(ctx, "SESSION.sandbox"), false, "`exit` quitte le bac à sable");
+  assertEqual(get(ctx, "SESSION.user"), "kali", "retour sur kali après avoir quitté");
+
+  // Montage d'un FS entièrement personnalisé (API utilisée par l'UI)
+  get(ctx, `mountSandbox({ "a/b/c.txt": "coucou", "vide/": {}, "/etc/motd": "bienvenue" })`);
+  assertEqual(get(ctx, "SESSION.sandbox"), true, "mountSandbox réactive le mode sandbox");
+  assert(/coucou/.test(run(ctx, "cat a/b/c.txt").text), "FS custom : fichier imbriqué monté et lisible");
+  assert(/bienvenue/.test(run(ctx, "cat /etc/motd").text), "FS custom : chemin absolu monté");
+  assert(run(ctx, "cd vide").cls !== "t-err", "FS custom : dossier vide navigable");
+});
+
 // ── Rapport final ─────────────────────────────────────────────────────────────
 Promise.all(pendingAsync).then(() => {
   console.log(`\n${"─".repeat(60)}`);

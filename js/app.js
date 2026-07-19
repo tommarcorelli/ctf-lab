@@ -356,6 +356,37 @@ function shareEditorLink() {
     );
   } else { show(); }
 }
+// ── Bac à sable libre (modale de FS custom) ──────────────────────────────────
+const SANDBOX_TEMPLATE = JSON.stringify({
+  "README.txt": "Mon bac à sable — j'édite ce FS comme je veux.",
+  "notes/journal.txt": "jour 1 : découverte du terminal\njour 2 : maîtrise des pipes",
+  "data/scores.csv": "joueur,points\nalice,1200\nbob,980\ncarol,1500",
+  "scripts/": {},
+}, null, 2);
+function openSandboxEditor() {
+  const ta = document.getElementById("sandbox-json");
+  if (ta && !ta.value.trim()) ta.value = SANDBOX_TEMPLATE;
+  document.getElementById("sandbox-modal").classList.remove("hidden");
+  if (ta) ta.focus();
+}
+function closeSandboxEditor() { document.getElementById("sandbox-modal").classList.add("hidden"); }
+function setSandboxMsg(html, cls) {
+  const el = document.getElementById("sandbox-msg");
+  el.className = "editor-msg" + (cls ? " " + cls : "");
+  el.innerHTML = html;
+}
+function mountFromSandboxEditor() {
+  const raw = document.getElementById("sandbox-json").value;
+  let spec;
+  try { spec = JSON.parse(raw); } catch (e) { setSandboxMsg("❌ JSON invalide : " + escapeHtml(e.message), "err"); return; }
+  if (!spec || typeof spec !== "object" || Array.isArray(spec)) { setSandboxMsg("❌ La racine doit être un objet { \"chemin\": \"contenu\" }.", "err"); return; }
+  mountSandbox(spec);
+  closeSandboxEditor();
+  printLine("🧪 Bac à sable monté avec ton FS personnalisé. Tu es `hacker@sandbox` — entraîne-toi (`ls`, `cat`, `find`, pipes…). `sandbox reset` (ou `exit`) pour revenir.", "t-ok");
+  updatePromptLabel();
+  updateAmbientForContext();
+  inputEl.focus();
+}
 function loadSharedMachine(encoded) {
   // Différé pour s'afficher après la bannière d'accueil.
   setTimeout(() => {
@@ -888,6 +919,13 @@ function boot() {
   document.getElementById("replay-open").addEventListener("click", loadReplayFromFile);
   document.getElementById("replay-modal").addEventListener("click", (e) => { if (e.target.id === "replay-modal") closeReplay(); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !replayModal().classList.contains("hidden")) closeReplay(); });
+
+  document.getElementById("sandbox-toggle").addEventListener("click", openSandboxEditor);
+  document.getElementById("sandbox-close").addEventListener("click", closeSandboxEditor);
+  document.getElementById("sandbox-mount").addEventListener("click", mountFromSandboxEditor);
+  document.getElementById("sandbox-demo").addEventListener("click", () => { document.getElementById("sandbox-json").value = SANDBOX_TEMPLATE; setSandboxMsg(""); });
+  document.getElementById("sandbox-modal").addEventListener("click", (e) => { if (e.target.id === "sandbox-modal") closeSandboxEditor(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !document.getElementById("sandbox-modal").classList.contains("hidden")) closeSandboxEditor(); });
 
   if (location.hash === "#editor") openEditor();
   if (location.hash.startsWith("#machine=")) loadSharedMachine(location.hash.slice("#machine=".length));

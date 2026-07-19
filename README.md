@@ -157,6 +157,15 @@ d'accès (FTP / config web / bucket cloud) et une brique de privesc (sudo GTFOBi
 Le seed est déterministe (même seed → même machine), donc une machine générée se rejoue ou se
 partage à l'identique.
 
+## Bac à sable libre
+
+La commande **`sandbox`** (ou le bouton **🧪**) monte une session `hacker@sandbox` avec un système
+de fichiers **à toi**, **sans machine, sans flag ni score** : juste pour s'entraîner aux commandes
+(`ls`, `cd`, `cat`, `find`, `grep`, `cut`, `awk`, `wc`, `vim`, pipes…). `sandbox` seul charge un FS
+de démo ; la modale 🧪 permet de coller son propre FS au format `{ "chemin": "contenu" }` (une chaîne
+= fichier, `{}` ou un `/` final = dossier ; chemins relatifs à `~` sauf s'ils commencent par `/`).
+`sandbox reset` (ou `exit`) revient sur la machine kali.
+
 ## Replay de session
 
 Chaque commande et sa sortie sont enregistrées en mémoire. Le bouton **▶️** de l'en-tête (ou la

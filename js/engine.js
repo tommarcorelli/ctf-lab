@@ -96,6 +96,7 @@ const SESSION = {
   listening: null,       // port en écoute côté attaquant (nc -lvnp), ou null
   uploaded: {},          // { machineId: bool } — webshell uploadé sur la machine
   tunnel: null,          // { localPort, targetIp, targetPort } — tunnel ssh -L actif (pivot)
+  sandbox: false,        // true en mode bac à sable libre (FS custom, sans flag ni score)
 };
 
 // Une machine "interne" (machine.internal) n'est routable qu'à travers un tunnel ssh -L
@@ -250,6 +251,71 @@ function resetSessionToAttacker() {
   SESSION.cwd = "/home/kali";
   SESSION.fs = buildAttackerFS();
   SESSION.pagerMode = null;
+  SESSION.sandbox = false;
+}
+
+// ── Bac à sable libre : FS custom, sans machine, sans flag ni scoring ─────────
+// Un spec de FS est une map plate { chemin: contenu }. Une valeur chaîne = fichier,
+// un objet/null ou un chemin finissant par "/" = dossier. Chemins relatifs au home
+// (/home/hacker) sauf s'ils commencent par "/".
+const DEFAULT_SANDBOX_FS = {
+  "README.txt": "Bac à sable — entraîne-toi librement aux commandes (ls, cd, cat, find, echo,\nvim, grep, cut, awk, wc, sort...). Aucun flag, aucun score : juste pour pratiquer.\nQuitte avec `sandbox reset` (ou `exit`).",
+  "notes/": {},
+  "notes/todo.txt": "acheter du cafe\nfinir le rapport trimestriel\nrappeler l'auditrice\nranger le bureau",
+  "notes/idees.md": "# Idees\n- automatiser les sauvegardes\n- durcir le pare-feu\n- former l'equipe au phishing",
+  "logs/access.log": "10.0.0.4 GET /\n10.0.0.9 POST /login\n10.0.0.4 GET /admin\n10.0.0.9 GET /\n10.0.0.13 POST /login",
+  "data/users.csv": "id,name,role\n1,alice,admin\n2,bob,user\n3,carol,user\n4,dan,admin",
+  "bin/": {},
+};
+function buildSandboxFS(spec) {
+  const home = "/home/hacker";
+  const fs = { "/": { type: "dir" }, "/home": { type: "dir" }, [home]: { type: "dir", owner: "hacker" } };
+  const entries = spec && typeof spec === "object" && !Array.isArray(spec) ? spec : {};
+  for (const [rawPath, val] of Object.entries(entries)) {
+    let p = String(rawPath).trim();
+    if (!p) continue;
+    const isDir = p.endsWith("/") || (val && typeof val === "object");
+    p = p.replace(/\/+$/, "");
+    const abs = p.startsWith("/") ? normPath(p) : normPath(home + "/" + p);
+    fs[abs] = isDir
+      ? { type: "dir", owner: "hacker" }
+      : { type: "file", perms: "-rw-r--r--", owner: "hacker", content: val == null ? "" : String(val) };
+    ensureParents(fs, abs);
+  }
+  Object.keys(fs).forEach((k) => ensureParents(fs, k));
+  return fs;
+}
+function mountSandbox(spec) {
+  SESSION.fs = buildSandboxFS(spec);
+  SESSION.ctx = "attacker"; // pas de machine -> pas de scan de flag ni de scoring
+  SESSION.user = "hacker";
+  SESSION.host = "sandbox";
+  SESSION.home = "/home/hacker";
+  SESSION.cwd = "/home/hacker";
+  SESSION.activeMachine = null;
+  SESSION.pagerMode = null;
+  SESSION.vimMode = null;
+  SESSION.sandbox = true;
+  if (typeof renderSidebar === "function") renderSidebar();
+}
+function cmdSandbox(args) {
+  const sub = (args[0] || "").toLowerCase();
+  if (sub === "reset" || sub === "exit" || sub === "quit") {
+    if (!SESSION.sandbox) return out("Tu n'es pas dans le bac à sable.", "t-err");
+    resetSessionToAttacker();
+    return out("Bac à sable quitté — retour sur ta machine (kali).");
+  }
+  if (sub === "edit" || sub === "custom") {
+    if (typeof openSandboxEditor === "function") { openSandboxEditor(); return out("🧪 Éditeur de FS du bac à sable ouvert (colle ton arborescence JSON, puis « Monter »)."); }
+    return out("Pour un FS personnalisé, utilise le bouton 🧪 de l'interface. `sandbox` seul monte un FS de démo.", "t-hint");
+  }
+  mountSandbox(DEFAULT_SANDBOX_FS);
+  return out(
+    "🧪 Bac à sable monté (FS de démo). Tu es `hacker@sandbox`.\n" +
+      "Entraîne-toi : `ls`, `cat README.txt`, `find .`, `cat data/users.csv | cut -d , -f 2`, `grep POST logs/access.log`...\n" +
+      "Aucun flag ni score ici. `sandbox reset` (ou `exit`) pour revenir. Bouton 🧪 pour monter un FS custom.",
+    "t-ok",
+  );
 }
 
 // ── Formatage ls -la ─────────────────────────────────────────────────────────
@@ -513,7 +579,7 @@ const KNOWN_COMMANDS = [
   "challenges", "challenge", "chint", "submit", "hashcat", "daily", "score", "history",
   "whoami", "id", "groups", "pwd", "ls", "cd", "cat", "find", "echo", "nmap", "curl",
   "ftp", "ssh", "sudo", "crontab", "exit", "man", "docker", "export", "import",
-  "dir", "type", "net", "schtasks", "icacls", "vim", "nc", "cloudctl", "generate", "replay",
+  "dir", "type", "net", "schtasks", "icacls", "vim", "nc", "cloudctl", "generate", "replay", "sandbox",
 ];
 const PATH_COMMANDS = ["cd", "ls", "cat", "find", "dir", "type", "icacls", "vim"];
 
@@ -1384,7 +1450,7 @@ function dispatch(cmd, args, rawFirst) {
     case "id":
     case "groups": {
       if (isWinCtx()) return out("'id' n'est pas reconnu en tant que commande interne ou externe, un programme exécutable ou un fichier de commandes.", "t-err");
-      if (SESSION.ctx === "attacker") return out(`uid=1000(kali) gid=1000(kali) groupes=1000(kali)`);
+      if (SESSION.ctx === "attacker") return out(`uid=1000(${SESSION.user}) gid=1000(${SESSION.user}) groupes=1000(${SESSION.user})`);
       if (SESSION.user === "root") return out("uid=0(root) gid=0(root) groupes=0(root)");
       const machine = getMachine(SESSION.ctx);
       const extra = machine.targetFS.extraGroups ? `,${machine.targetFS.extraGroups}` : "";
@@ -1418,6 +1484,7 @@ function dispatch(cmd, args, rawFirst) {
     case "nc": return cmdNc(args);
     case "cloudctl": return cmdCloudctl(args);
     case "generate": return cmdGenerate(args);
+    case "sandbox": return cmdSandbox(args);
     default: {
       if (SESSION.ctx !== "attacker") {
         const machine = getMachine(SESSION.ctx);
@@ -1453,7 +1520,7 @@ function cmdHelp() {
     "Windows (machine cible Windows) : dir, type, net user, net localgroup administrators, schtasks /query, icacls <fichier>\n" +
     "Filtres en pipe : grep, wc -l, sort [-u], head, tail, cut, awk '{print $N}'\n" +
     "Shell : variables $USER/$HOME/$PWD/$HOSTNAME/$UID/$? (${VAR} aussi), substitution $(commande), redirections > >> 2> &> 2>/dev/null\n" +
-    "Bac à sable : generate [seed] (génère une machine aléatoire jouable), éditeur de machines (bouton 🛠️), replay (rejoue ta session, bouton ▶️)"
+    "Bac à sable : generate [seed] (machine aléatoire jouable), sandbox (FS libre pour s'entraîner, bouton 🧪), éditeur de machines (🛠️), replay (rejoue ta session, ▶️)"
   );
 }
 
@@ -1653,7 +1720,8 @@ function cmdProgress() {
 function cmdLs(args) {
   const opts = { all: args.includes("-la") || args.includes("-al") || args.includes("-a"), long: args.includes("-la") || args.includes("-al") || args.includes("-l") };
   const pathArg = args.find((a) => !a.startsWith("-"));
-  const p = resolvePath(pathArg, SESSION.cwd, SESSION.home);
+  // Sans argument, `ls` liste le répertoire courant (.), pas le home (~).
+  const p = resolvePath(pathArg || ".", SESSION.cwd, SESSION.home);
   if (isRootOnly(SESSION.fs, p) && SESSION.user !== "root") return out(`ls: impossible d'ouvrir le répertoire '${pathArg || "."}': Permission refusée`, "t-err");
   if (!SESSION.fs[p] && p !== "/") return out(`ls: impossible d'accéder à '${pathArg}': Fichier ou dossier introuvable`, "t-err");
   return out(formatLs(SESSION.fs, p, opts));
@@ -2252,6 +2320,7 @@ function cmdBashDashP(args, rawFirst) {
   return out("bash: -p: option invalide.", "t-err");
 }
 function cmdExit() {
+  if (SESSION.sandbox) { resetSessionToAttacker(); return out("Bac à sable quitté — retour sur ta machine (kali)."); }
   if (SESSION.ctx === "attacker") return out("Rien à quitter ici (tape simplement d'autres commandes).");
   const wasMachine = SESSION.ctx;
   resetSessionToAttacker();

@@ -238,7 +238,14 @@ reverse shell manuel sur MERIDIAN, `validateMachines` en garde-fou de schéma) :
       s'exporte en `.json` (`replay save` ou bouton) et se recharge (« Charger un replay ») pour
       être rejoué plus tard ou partagé. Aucune dépendance, tout en Canvas/DOM. Vérifié au rendu
       (headless) : frappe animée, sorties fidèles, « fin du replay ».
-- [ ] **Mode bac à sable libre** — une machine "vierge" où on peut monter n'importe quel FS
+- [x] **Mode bac à sable libre** — commande **`sandbox`** (ou bouton **🧪**) : monte une session
+      `hacker@sandbox` avec un FS **entièrement personnalisable** (map plate `{ "chemin": "contenu" }`,
+      via `mountSandbox`), **sans machine, sans flag, sans scoring** (ctx attaquant → aucun scan de
+      flag). On s'y entraîne librement aux commandes (`ls`, `cd`, `cat`, `find`, `grep`, `cut`,
+      `awk`, `wc`, `vim`, pipes…). Un FS de démo est fourni ; la modale 🧪 laisse coller son propre
+      FS JSON. `sandbox reset` (ou `exit`) revient sur la machine kali. Testé dans `tests/run.js`
+      (FS de démo + custom, pipes, aucune modification du score, sortie) et vérifié au rendu. *(Au
+      passage : bug corrigé — `ls` sans argument listait le home au lieu du répertoire courant.)*
       custom (JSON collé par l'utilisateur) pour s'entraîner aux commandes sans notion de
       flag ni de scoring
 - [ ] **Vrai mini-langage de script pour les exploits** — remplacer les regex ad-hoc de
