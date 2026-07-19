@@ -1085,6 +1085,8 @@ function boot() {
   document.getElementById("graph-modal").addEventListener("click", (e) => { if (e.target.id === "graph-modal") closeGraph(); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !document.getElementById("graph-modal").classList.contains("hidden")) closeGraph(); });
 
+  if (typeof applyI18n === "function") { applyI18n(); const lb = document.getElementById("lang-toggle"); if (lb) { lb.textContent = LANG === "fr" ? "FR" : "EN"; lb.addEventListener("click", toggleLang); } }
+
   document.getElementById("split-toggle").addEventListener("click", toggleSplit);
   document.getElementById("side-clear").addEventListener("click", () => { document.getElementById("side-pane-body").innerHTML = ""; });
 
@@ -1099,6 +1101,7 @@ function boot() {
 
   if (location.hash === "#editor") openEditor();
   if (location.hash.startsWith("#machine=")) loadSharedMachine(location.hash.slice("#machine=".length));
+  if (location.hash === "#en" && typeof setLang === "function") setLang("en");
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !editorEl("editor-modal").classList.contains("hidden")) closeEditor(); });
 
   resetSessionToAttacker();

@@ -20,34 +20,35 @@
       <span class="brand-mark">&gt;_</span>
       <span class="brand-name">CTF<span class="accent">LAB</span></span>
     </div>
-    <div class="header-sub">Recon → Accès initial → Élévation de privilèges → Flag</div>
+    <div class="header-sub" data-i18n="app.subtitle">Recon → Accès initial → Élévation de privilèges → Flag</div>
     <div class="xp-wrap" title="Niveau et expérience">
       <div id="xp-label" class="xp-label">Niveau 1 · 0/500 XP</div>
       <div class="xp-bar"><div id="xp-fill" class="xp-fill" style="width:0%"></div></div>
     </div>
     <div id="score-status" class="score-status">Score : 0 pts</div>
-    <button id="theme-toggle" class="icon-toggle" type="button" title="Changer de thème">🌙</button>
-    <button id="sound-toggle" class="icon-toggle" type="button" title="Son à la capture d'un flag">🔈</button>
-    <button id="ambient-toggle" class="icon-toggle" type="button" title="Ambiance sonore continue (générée, varie selon la difficulté)">🎧</button>
-    <button id="voice-toggle" class="icon-toggle" type="button" title="Narration vocale des indices et messages importants">🗣️</button>
-    <button id="fx-toggle" class="icon-toggle" type="button" title="Effets visuels (particules, glow)">✨</button>
-    <button id="editor-toggle" class="icon-toggle" type="button" title="Créer une machine (éditeur)">🛠️</button>
-    <button id="replay-toggle" class="icon-toggle" type="button" title="Rejouer la session (replay)">▶️</button>
-    <button id="sandbox-toggle" class="icon-toggle" type="button" title="Bac à sable libre (FS custom)">🧪</button>
-    <button id="graph-toggle" class="icon-toggle" type="button" title="Graphe d'attaque">🗺️</button>
-    <button id="stack-toggle" class="icon-toggle" type="button" title="Défi buffer overflow (pile)">🧠</button>
-    <button id="split-toggle" class="icon-toggle" type="button" title="Panneau journal (split façon tmux)">▦</button>
+    <button id="theme-toggle" class="icon-toggle" type="button" data-i18n-title="tip.theme" title="Changer de thème">🌙</button>
+    <button id="sound-toggle" class="icon-toggle" type="button" data-i18n-title="tip.sound" title="Son à la capture d'un flag">🔈</button>
+    <button id="ambient-toggle" class="icon-toggle" type="button" data-i18n-title="tip.ambient" title="Ambiance sonore continue (générée, varie selon la difficulté)">🎧</button>
+    <button id="voice-toggle" class="icon-toggle" type="button" data-i18n-title="tip.voice" title="Narration vocale des indices et messages importants">🗣️</button>
+    <button id="fx-toggle" class="icon-toggle" type="button" data-i18n-title="tip.fx" title="Effets visuels (particules, glow)">✨</button>
+    <button id="editor-toggle" class="icon-toggle" type="button" data-i18n-title="tip.editor" title="Créer une machine (éditeur)">🛠️</button>
+    <button id="replay-toggle" class="icon-toggle" type="button" data-i18n-title="tip.replay" title="Rejouer la session (replay)">▶️</button>
+    <button id="sandbox-toggle" class="icon-toggle" type="button" data-i18n-title="tip.sandbox" title="Bac à sable libre (FS custom)">🧪</button>
+    <button id="graph-toggle" class="icon-toggle" type="button" data-i18n-title="tip.graph" title="Graphe d'attaque">🗺️</button>
+    <button id="stack-toggle" class="icon-toggle" type="button" data-i18n-title="tip.stack" title="Défi buffer overflow (pile)">🧠</button>
+    <button id="split-toggle" class="icon-toggle" type="button" data-i18n-title="tip.split" title="Panneau journal (split façon tmux)">▦</button>
+    <button id="lang-toggle" class="icon-toggle" type="button" data-i18n-title="tip.lang" title="Language / Langue">FR</button>
   </header>
 
   <main class="layout">
     <aside class="sidebar">
-      <h2>Machines</h2>
+      <h2 data-i18n="sidebar.machines">Machines</h2>
       <div id="machines-list" class="machines-list"></div>
       <div class="legend">
-        <div><span class="step on"></span> étape validée</div>
-        <div><span class="step"></span> étape restante</div>
+        <div><span class="step on"></span> <span data-i18n="sidebar.stepOn">étape validée</span></div>
+        <div><span class="step"></span> <span data-i18n="sidebar.stepOff">étape restante</span></div>
       </div>
-      <h2 class="badges-title">Badges</h2>
+      <h2 class="badges-title" data-i18n="sidebar.badges">Badges</h2>
       <div id="badges-list" class="badges-list"></div>
     </aside>
 
@@ -187,6 +188,7 @@
     </div>
   </div>
 
+  <script src="js/i18n.js"></script>
   <script src="js/machines.js"></script>
   <script src="js/engine.js"></script>
   <script src="js/app.js"></script>
