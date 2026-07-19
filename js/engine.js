@@ -94,7 +94,24 @@ const SESSION = {
   sudoLocked: {},        // { machineId: bool }
   vimMode: null,         // { path, lines, isNew, machineId } — édition en cours
   listening: null,       // port en écoute côté attaquant (nc -lvnp), ou null
+  uploaded: {},          // { machineId: bool } — webshell uploadé sur la machine
+  tunnel: null,          // { localPort, targetIp, targetPort } — tunnel ssh -L actif (pivot)
 };
+
+// Une machine "interne" (machine.internal) n'est routable qu'à travers un tunnel ssh -L
+// pointant vers son IP (établi depuis un pivot déjà rooté). Les autres sont toujours joignables.
+function isReachable(machine) {
+  if (!machine.internal) return true;
+  return !!(SESSION.tunnel && SESSION.tunnel.targetIp === machine.ip);
+}
+function unreachableMsg(machine) {
+  return out(
+    `Aucune route vers l'hôte ${machine.ip} — hôte interne, non routable directement.\n` +
+      "(indice : il faut pivoter à travers une machine déjà compromise, ex. `ssh -L <port>:" +
+      `${machine.ip}:22 <user>@<ip_du_pivot>\`)`,
+    "t-err",
+  );
+}
 
 // ── Utilitaires filesystem ──────────────────────────────────────────────────
 function normPath(p) {
@@ -327,7 +344,7 @@ const KNOWN_COMMANDS = [
   "challenges", "challenge", "chint", "submit", "hashcat", "daily", "score", "history",
   "whoami", "id", "groups", "pwd", "ls", "cd", "cat", "find", "echo", "nmap", "curl",
   "ftp", "ssh", "sudo", "crontab", "exit", "man", "docker", "export", "import",
-  "dir", "type", "net", "schtasks", "icacls", "vim", "nc",
+  "dir", "type", "net", "schtasks", "icacls", "vim", "nc", "cloudctl",
 ];
 const PATH_COMMANDS = ["cd", "ls", "cat", "find", "dir", "type", "icacls", "vim"];
 
@@ -1027,6 +1044,7 @@ function dispatch(cmd, args, rawFirst) {
     case "vi":
     case "nano": return cmdVim(args);
     case "nc": return cmdNc(args);
+    case "cloudctl": return cmdCloudctl(args);
     default: {
       if (SESSION.ctx !== "attacker") {
         const machine = getMachine(SESSION.ctx);
@@ -1056,8 +1074,8 @@ function cmdHelp() {
   return out(
     "Commandes générales : help, clear, machines, use <nom>, reset <nom>, hint, insane [on|off], progress, badges, records, writeup <nom>, export <passphrase>, import, score, exit\n" +
     "Mode Jeopardy : challenges, challenge <id>, chint <id>, submit <id> <flag>, hashcat <hash>, daily\n" +
-    "Reconnaissance : nmap <ip>, curl <url>, ftp <ip>, nc <ip> <port>\n" +
-    "Accès : ssh <user>@<ip> [-p <port>]\n" +
+    "Reconnaissance : nmap <ip>, curl <url>, ftp <ip>, nc <ip> <port>, cloudctl ls|get|cp\n" +
+    "Accès : ssh <user>@<ip> [-p <port>], curl -F \"file=@<webshell>\" <url> (upload), ssh -L <lport>:<hôte_interne>:<port> <user>@<pivot> (tunnel/pivot)\n" +
     "Système (une fois connecté ou en local) : ls [-la], cd, pwd, cat, find, echo, vim <fichier>, whoami, id, sudo -l, sudo <cmd>, crontab -l, docker ps\n" +
     "Windows (machine cible Windows) : dir, type, net user, net localgroup administrators, schtasks /query, icacls <fichier>\n" +
     "Filtres en pipe : grep, wc -l, sort [-u], head, tail, cut, awk '{print $N}'"
@@ -1347,6 +1365,74 @@ function checkAndPlant(machine, path) {
   SESSION.cronPlanted[machine.id] = true;
   SESSION.cronTicked[machine.id] = false;
 }
+// cloudctl : fausse CLI de stockage objet (type aws s3). Recon/pillage d'un bucket mal
+// configuré (accès public). Purement en dur, aucun vrai SDK ni requête réseau.
+function parseS3(uri) {
+  const m = (uri || "").match(/^s3:\/\/([^/]+)(?:\/(.*))?$/);
+  if (!m) return null;
+  return { bucket: m[1], key: m[2] || "" };
+}
+function cloudMachines() {
+  return MACHINES.filter((m) => m.cloud && GAME.unlocked.includes(m.id));
+}
+function findBucket(name) {
+  for (const m of cloudMachines()) {
+    if (m.cloud.buckets[name]) return { machine: m, bucket: m.cloud.buckets[name] };
+  }
+  return null;
+}
+function cmdCloudctl(args) {
+  const sub = args[0];
+  if (!sub || sub === "--help" || sub === "help") {
+    return out(
+      "cloudctl — client de stockage objet (simulé)\n\n" +
+        "  cloudctl ls                      liste les buckets accessibles\n" +
+        "  cloudctl ls s3://<bucket>        liste le contenu d'un bucket\n" +
+        "  cloudctl get s3://<bucket>/<clé>  télécharge/affiche un objet\n" +
+        "  cloudctl cp <fichier> s3://<bucket>/  téléverse un objet (si autorisé)",
+    );
+  }
+  const clouds = cloudMachines();
+  if (sub === "ls") {
+    const uri = args[1];
+    if (!uri) {
+      if (!clouds.length) return out("cloudctl: aucun bucket accessible (aucun endpoint de stockage découvert).", "t-err");
+      const lines = [];
+      for (const m of clouds) {
+        for (const [name, b] of Object.entries(m.cloud.buckets)) {
+          lines.push(`${b.public ? "PUBLIC " : "private"}  s3://${name}`);
+        }
+      }
+      return out(lines.join("\n"));
+    }
+    const s3 = parseS3(uri);
+    if (!s3) return out(`cloudctl: URI invalide (${uri}) — attendu s3://<bucket>[/<clé>]`, "t-err");
+    const hit = findBucket(s3.bucket);
+    if (!hit) return out(`cloudctl: bucket introuvable : ${s3.bucket}`, "t-err");
+    if (!hit.bucket.public) return out(`cloudctl: AccessDenied — pas d'autorisation de lister s3://${s3.bucket} (bucket privé).`, "t-err");
+    const files = Object.keys(hit.bucket.files);
+    return out(files.map((f) => `s3://${s3.bucket}/${f}`).join("\n") || "(bucket vide)");
+  }
+  if (sub === "get") {
+    const s3 = parseS3(args[1]);
+    if (!s3 || !s3.key) return out("usage: cloudctl get s3://<bucket>/<clé>", "t-err");
+    const hit = findBucket(s3.bucket);
+    if (!hit) return out(`cloudctl: bucket introuvable : ${s3.bucket}`, "t-err");
+    if (!hit.bucket.public) return out(`cloudctl: AccessDenied — s3://${s3.bucket} est privé.`, "t-err");
+    const content = hit.bucket.files[s3.key];
+    if (content === undefined) return out(`cloudctl: objet introuvable : s3://${s3.bucket}/${s3.key}`, "t-err");
+    return out(content);
+  }
+  if (sub === "cp") {
+    const dst = parseS3(args[args.length - 1]);
+    if (!dst) return out("usage: cloudctl cp <fichier_local> s3://<bucket>/", "t-err");
+    const hit = findBucket(dst.bucket);
+    if (!hit) return out(`cloudctl: bucket introuvable : ${dst.bucket}`, "t-err");
+    if (!hit.bucket.public) return out(`cloudctl: AccessDenied — écriture refusée sur s3://${dst.bucket} (bucket privé).`, "t-err");
+    return out(`upload: ${args[1] || "(fichier)"} -> s3://${dst.bucket}/ (accepté — le bucket autorise l'écriture publique).`, "t-ok");
+  }
+  return out(`cloudctl: sous-commande inconnue : ${sub} (essaie \`cloudctl --help\`)`, "t-err");
+}
 function cmdNc(args) {
   const isListen = args.some((a) => /^-[a-z]*l[a-z]*$/i.test(a));
   const portArg = args.find((a) => /^\d+$/.test(a));
@@ -1462,6 +1548,7 @@ function cmdNmap(args) {
   const machine = MACHINES.find((m) => m.ip === ip);
   if (!machine) return out(`Aucune route vers l'hôte ${ip || ""}`, "t-err");
   if (!GAME.unlocked.includes(machine.id)) return out("Machine verrouillée.", "t-err");
+  if (!isReachable(machine)) return unreachableMsg(machine);
   SESSION.activeMachine = machine.id;
   const wasScanned = GAME.progress[machine.id].recon;
   if (!wasScanned) {
@@ -1487,6 +1574,9 @@ function cmdCurl(args) {
   const dIdx = args.findIndex((a) => a === "-d" || a === "--data");
   const isPost = dIdx >= 0;
   const data = isPost ? (args[dIdx + 1] || "") : null;
+  const fIdx = args.findIndex((a) => a === "-F" || a === "--form");
+  const isUpload = fIdx >= 0;
+  const formData = isUpload ? (args[fIdx + 1] || "") : null;
   const urlArg = args.find((a) => a.startsWith("http"));
   if (!urlArg) return out("curl: aucune URL fournie", "t-err");
   const u = parseUrl(urlArg);
@@ -1494,8 +1584,25 @@ function cmdCurl(args) {
   const machine = MACHINES.find((m) => m.ip === u.ip);
   if (!machine) return out(`curl: (7) Échec de connexion à ${u.ip} port ${u.port} : Connexion refusée`, "t-err");
   if (!GAME.unlocked.includes(machine.id)) return out("curl: machine verrouillée.", "t-err");
+  if (!isReachable(machine)) return unreachableMsg(machine);
   const httpPort = machine.ports.find((p) => p.service === "http");
   if (!httpPort || httpPort.port !== u.port) return out(`curl: (7) Échec de connexion à ${u.ip} port ${u.port} : Connexion refusée`, "t-err");
+
+  // Upload de fichier (curl -F "file=@webshell.php") sur un formulaire mal filtré.
+  if (isUpload) {
+    const up = machine.upload;
+    if (!up || u.path !== up.formPath) return out(`curl: (22) Erreur HTTP 404 sur ${u.path}`, "t-err");
+    const fname = ((formData.split("@").pop() || formData).trim()) || formData;
+    if (!up.filenameRegex.test(fname)) {
+      return out(`Upload refusé : type de fichier non autorisé (${fname}).\n(le filtre n'accepte a priori que des images...)`, "t-err");
+    }
+    SESSION.uploaded[machine.id] = true;
+    return out(
+      `Upload accepté : ${fname}\nFichier enregistré côté serveur : ${up.webshellPath}\n` +
+        "(le filtre ne valide que l'extension apparente — un script déguisé passe. À toi de le déclencher.)",
+      "t-ok",
+    );
+  }
 
   if (isPost) {
     if (!machine.sqli || u.path !== machine.sqli.path) {
@@ -1511,6 +1618,13 @@ function cmdCurl(args) {
     const basePath = qIdx >= 0 ? u.path.slice(0, qIdx) : u.path;
     const query = qIdx >= 0 ? u.path.slice(qIdx + 1) : "";
     if (basePath === aa.path && aa.injectRegex.test(query)) {
+      if (aa.requiresUpload && !SESSION.uploaded[machine.id]) {
+        return out(
+          `curl: (22) Erreur HTTP 404 sur ${basePath} — aucun fichier à ce chemin.\n` +
+            "(il faut d'abord uploader ton webshell via le formulaire, cf. son endpoint d'upload)",
+          "t-err",
+        );
+      }
       // Injection de commande détectée sur l'endpoint vulnérable. L'IP et le port du
       // callback sont parsés depuis le payload du joueur (variables, plus câblés en dur) :
       // c'est ce qui rend le mécanisme réutilisable par n'importe quelle machine.
@@ -1567,6 +1681,31 @@ function cmdFtp(args) {
 
 function cmdSsh(args) {
   const target = args.find((a) => a.includes("@"));
+
+  // Redirection de port local (ssh -L <lport>:<hôte_cible>:<tport> <user>@<pivot>) : établit
+  // un tunnel à travers une machine déjà rootée, rendant un hôte interne joignable. Simulé :
+  // on n'exige pas le mot de passe du pivot (on est censé y avoir déjà un accès root).
+  const lIdx = args.indexOf("-L");
+  if (lIdx >= 0) {
+    const spec = args[lIdx + 1] || "";
+    const mm = spec.match(/^(\d+):(\d+\.\d+\.\d+\.\d+):(\d+)$/);
+    if (!mm) return out("usage: ssh -L <port_local>:<hôte_cible>:<port_cible> <user>@<hôte_pivot>", "t-err");
+    const pivotIp = target ? target.split("@")[1] : null;
+    const pivot = MACHINES.find((m) => m.ip === pivotIp);
+    if (!pivot) return out(`ssh: impossible de résoudre l'hôte pivot ${pivotIp || "(manquant)"}`, "t-err");
+    if (!GAME.progress[pivot.id].rootFlag) {
+      return out(`ssh: il faut d'abord compromettre (obtenir root sur) ${pivot.name} pour ouvrir un tunnel à travers lui.`, "t-err");
+    }
+    const targetMachine = MACHINES.find((m) => m.ip === mm[2]);
+    SESSION.tunnel = { localPort: parseInt(mm[1], 10), targetIp: mm[2], targetPort: parseInt(mm[3], 10) };
+    return out(
+      `Tunnel SSH établi : 127.0.0.1:${mm[1]} -> ${mm[2]}:${mm[3]} (via ${pivot.name}).\n` +
+        `L'hôte interne ${mm[2]}${targetMachine ? ` (${targetMachine.name})` : ""} est maintenant joignable ` +
+        "(nmap / ssh directement sur son IP).",
+      "t-ok",
+    );
+  }
+
   if (!target) return out("usage: ssh utilisateur@ip [-p port]", "t-err");
   const [user, ip] = target.split("@");
   const portIdx = args.indexOf("-p");
@@ -1574,6 +1713,7 @@ function cmdSsh(args) {
   const machine = MACHINES.find((m) => m.ip === ip);
   if (!machine) return out(`ssh: connect to host ${ip} port ${port}: Aucun chemin vers l'hôte`, "t-err");
   if (!GAME.unlocked.includes(machine.id)) return out("Machine verrouillée.", "t-err");
+  if (!isReachable(machine)) return unreachableMsg(machine);
   const creds = machine.sshUsers[user];
   const expectedPort = creds && creds.port ? creds.port : 22;
   if (!creds || expectedPort !== port) return out(`ssh: connect to host ${ip} port ${port}: Connexion refusée`, "t-err");

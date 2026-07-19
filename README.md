@@ -11,7 +11,7 @@ Aucun build : ouvre simplement `index.html` dans un navigateur.
 ```
 index.html        Page + layout (sidebar machines + terminal)
 css/style.css      Thème sombre / clair / contraste élevé, effets FX
-js/machines.js     Données des 7 machines (fs, services, creds, exploits, indices)
+js/machines.js     Données des 11 machines (fs, services, creds, exploits, indices)
 js/engine.js        Moteur : FS virtuel, commandes, pipes, scoring, badges, records, write-up, sauvegarde
 js/app.js           Liaison DOM <-> moteur (input, prompt, toasts, sidebar, particules, PWA)
 manifest.json      Manifeste PWA (installation, icône, nom)
@@ -33,6 +33,12 @@ utilisés sont sauvegardés dans le `localStorage` du navigateur (clé `ctf_lab_
 - **MERIDIAN** (difficile) — LFI via `?file=` sur un export de rapport → sudo GTFOBins (`python3`)
 - **GLACIER** (expert, **Windows**) — FTP anonyme → SSH (OpenSSH for Windows) → tâche planifiée SYSTEM
   avec script modifiable
+- **STRATUS** (difficile) — bucket de stockage objet public (`cloudctl`) → fuite d'un `deploy.env` →
+  SSH → sudo GTFOBins (`env`)
+- **NEXUS** (difficile) — upload de webshell mal filtré (`curl -F` d'un `.php` déguisé) → reverse shell
+  www-data → sudo GTFOBins (`tar --checkpoint`)
+- **CITADEL** (expert) — **hôte interne** injoignable directement : pivot via NEXUS rooté (`ssh -L`) →
+  SSH sur l'IP interne → sudo GTFOBins (`perl`)
 - **AXIOM** (insane) — logs CI/CD exposés → SSH → appartenance au groupe `docker` (équivalent root via
   montage du disque hôte dans un conteneur)
 
@@ -71,7 +77,7 @@ l'autre sans backend.
 
 ## Mode Jeopardy
 
-En plus des 8 machines en mode boîte, un mini mode Jeopardy propose 7 défis indépendants
+En plus des 11 machines en mode boîte, un mini mode Jeopardy propose 7 défis indépendants
 (Crypto ×4, Forensics ×2, Misc ×1) : `challenges` pour la liste, `challenge <id>` pour l'énoncé,
 `chint <id>` pour des indices progressifs, `submit <id> <flag>` pour valider. Les points s'ajoutent
 au score global (donc au niveau/XP). Le défi "Mot de passe recyclé" s'appuie sur un vrai petit
@@ -106,8 +112,8 @@ qui demandent d'éditer un script (ex : le cron piégeable de CERBERUS).
 
 ## Commandes principales
 
-Recon : `nmap <ip>`, `curl <url>` (GET, ou POST avec `-d "champ=valeur"`), `ftp <ip>`, `nc <ip> <port>` (bannière brute), `nc -lvnp <port>` (écoute, pour attraper une reverse shell si une machine le propose)
-Accès : `ssh user@ip [-p port]`
+Recon : `nmap <ip>`, `curl <url>` (GET, ou POST avec `-d "champ=valeur"`), `ftp <ip>`, `nc <ip> <port>` (bannière brute), `nc -lvnp <port>` (écoute, pour attraper une reverse shell si une machine le propose), `cloudctl ls|get|cp` (stockage objet simulé)
+Accès : `ssh user@ip [-p port]`, `curl -F "file=@<webshell>" <url>` (upload sur un formulaire mal filtré), `ssh -L <lport>:<hôte_interne>:<port> user@<pivot>` (tunnel de pivot vers un hôte interne, une fois le pivot rooté)
 Système (Linux) : `ls [-la]`, `cd`, `pwd`, `cat`, `find`, `echo`, `vim <fichier>` (alias `vi`/`nano`), `whoami`, `id`, `groups`, `sudo -l`, `sudo <cmd>`, `crontab -l`, `docker ps`
 Système (Windows, sur une machine cible Windows) : `dir`, `type`, `net user`, `net localgroup administrators`,
 `schtasks /query`, `icacls <fichier>` (les alias `ls`/`cat` fonctionnent aussi, comme dans PowerShell)
@@ -133,6 +139,14 @@ Pour une machine web vulnérable à une LFI/SQLi (comme PHANTOM), pas de code mo
   directement depuis le payload `nc <ip> <port>` du joueur : l'accès n'est accordé que si l'IP
   vaut `ATTACKER_IP` **et** que le port correspond à l'écoute lancée avec `nc -lvnp <port>`. Le
   joueur choisit donc librement son port — aucune valeur n'est câblée en dur côté machine.
+- Upload de webshell (comme NEXUS) : ajoute `machine.upload = { formPath, filenameRegex, webshellPath, user }`
+  (le `curl -F` accepte un fichier dont le nom matche `filenameRegex`), puis un `machine.altAccess`
+  pointant sur `webshellPath` avec `requiresUpload: true` (le webshell renvoie 404 tant qu'on n'a pas uploadé).
+- Cloud mal configuré (comme STRATUS) : ajoute `machine.cloud = { provider, buckets: { "<nom>": { public, files } } }`.
+  La commande `cloudctl` liste/lit les buckets `public` et refuse les privés — aucun code moteur à toucher.
+- Machine interne / pivot (comme CITADEL) : mets `internal: true` et `pivot: { via, pivotIp }`. Le moteur
+  rend l'IP injoignable (`nmap`/`ssh`/`curl`) tant qu'un tunnel `ssh -L <lport>:<ip_interne>:<port> user@<pivotIp>`
+  n'a pas été ouvert — et ce tunnel exige que la machine pivot (`pivotIp`) soit déjà rootée.
 
 Pour une machine Windows (comme GLACIER), ajoute `osType: "windows"` sur l'objet machine :
 le FS interne reste en chemins unix (`/Users/xxx`), `resolvePath` traduit automatiquement les
@@ -143,12 +157,12 @@ tout seul en style Windows.
 
 `node tests/run.js` lance une suite de tests zéro-dépendance (Node uniquement, pas de framework)
 qui charge `machines.js` + `engine.js` dans un contexte isolé et rejoue : le parsing/les pipes,
-l'exploitation complète des 8 machines (recon → accès → privesc → 2 flags chacune), le
+l'exploitation complète des 11 machines (recon → accès → privesc → 2 flags chacune), le
 remboursement de `reset`, la résolution des 6 défis Jeopardy et le mode Insane. À lancer après
 toute modification de `engine.js` ou `machines.js` pour éviter une régression silencieuse.
 
 `node tools/solve.js` est un **solveur automatique** (dev only, jamais embarqué dans le jeu) :
-il rejoue la solution officielle des 8 machines dans le vrai moteur et vérifie qu'aucun chemin
+il rejoue la solution officielle des 11 machines dans le vrai moteur et vérifie qu'aucun chemin
 d'exploit n'est cassé (les 5 jalons + le flag root de chaque machine). Code de sortie non-nul
 en cas de régression, donc utilisable en CI. Options : `--verbose` (chaque commande + sa sortie),
 `--walkthrough` (pas-à-pas propre), `--machine <id>` (une seule machine). Utile comme smoke test
