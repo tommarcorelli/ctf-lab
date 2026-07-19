@@ -1104,6 +1104,114 @@
     }
   },
   {
+    "id": "tempest",
+    "name": "TEMPEST",
+    "ip": "10.10.11.150",
+    "difficulty": "Difficile",
+    "os": "Linux (Ubuntu 22.04)",
+    "briefing": "Une plateforme de déploiement continu. Un de ses buckets d'artefacts est non seulement public... mais aussi ouvert en écriture, et son contenu est déployé automatiquement.",
+    "ports": [
+      {
+        "port": 22,
+        "proto": "tcp",
+        "state": "open",
+        "service": "ssh",
+        "version": "OpenSSH 8.9p1 Ubuntu"
+      },
+      {
+        "port": 8080,
+        "proto": "tcp",
+        "state": "open",
+        "service": "http",
+        "version": "Tempest CI (Jenkins-like)"
+      }
+    ],
+    "web": {
+      "/": "<html>\n<head><title>Tempest CI</title></head>\n<body>\n<h1>Tempest CI</h1>\n<p>Déploiement continu interne.</p>\n<!-- Artefacts de build : s3://tempest-artifacts (public) -->\n<!-- Pipeline : tout objet déposé dans s3://tempest-deploy est exécuté au prochain run -->\n</body>\n</html>"
+    },
+    "ftp": {
+      "enabled": false
+    },
+    "cloud": {
+      "provider": "s3",
+      "buckets": {
+        "tempest-artifacts": {
+          "public": true,
+          "files": {
+            "build.log": "Build #418 OK. Artefacts publiés.\nNote CI : le bucket tempest-deploy est monté par le runner et son contenu exécuté à chaque run (droits d'écriture publics — à corriger)."
+          }
+        },
+        "tempest-deploy": {
+          "public": true,
+          "writable": true,
+          "deploy": {
+            "user": "ci"
+          },
+          "files": {}
+        }
+      }
+    },
+    "sshUsers": {},
+    "targetFS": {
+      "hostname": "tempest",
+      "homeDir": "/home/ci",
+      "users": {
+        "ci": {
+          "home": "/home/ci",
+          "fs": {
+            "user.txt": {
+              "type": "file",
+              "content": "FLAG{tempest_acces_initial_bucket_writable_rce}",
+              "perms": "-rw-r--r--",
+              "owner": "ci"
+            },
+            "note_interne.txt": {
+              "type": "file",
+              "content": "Note interne — Solenne Holdings\nLe pipeline exécute n'importe quoi déposé dans le bucket de déploiement. R. Kade avait ouvert un ticket « RCE triviale via le bucket CI ». Statut : ignoré, comme le reste.",
+              "perms": "-rw-r--r--",
+              "owner": "ci"
+            }
+          }
+        }
+      },
+      "extraFS": {},
+      "sudoL": "L'utilisateur ci peut lancer les commandes suivantes sur tempest :\n    (root) NOPASSWD: /usr/bin/nmap"
+    },
+    "privesc": {
+      "type": "sudo-gtfobins",
+      "exploitCmdRegex": {
+        "__regex__": "^sudo\\s+(\\/usr\\/bin\\/)?nmap\\s+--interactive$",
+        "__flags__": ""
+      },
+      "pagerEscapeRegex": {
+        "__regex__": "^!\\/?(bin\\/)?sh$|^!bash$",
+        "__flags__": ""
+      },
+      "enterMsg": "Starting Nmap 7.80 ( interactive mode )\n(le mode interactif de nmap s'est ouvert avec les droits root)\n\nAstuce : le mode interactif de nmap permet de lancer une commande shell avec !<commande>.\nTape : !sh"
+    },
+    "rootFile": {
+      "path": "/root/root.txt",
+      "content": "FLAG{tempest_root_nmap_interactive_gtfobins}"
+    },
+    "hints": {
+      "recon": [
+        "Une plateforme de CI/CD expose souvent des artefacts sur du stockage objet.",
+        "Après `nmap 10.10.11.150`, lis `curl http://10.10.11.150:8080/` : deux commentaires citent des buckets `s3://...` et le comportement du pipeline.",
+        "Regarde les buckets avec `cloudctl ls` : `tempest-deploy` est marqué PUBLIC **et** inscriptible. `cloudctl get s3://tempest-artifacts/build.log` confirme qu'il est exécuté à chaque run."
+      ],
+      "access": [
+        "Un bucket de déploiement inscriptible dont le contenu est exécuté = exécution de code à distance : dépose un script qui te rappelle.",
+        "Mets-toi en écoute côté attaquant : `nc -lvnp 4444`.",
+        "Puis téléverse ton payload : `cloudctl cp reverse.sh s3://tempest-deploy/`. Le pipeline l'exécute et t'ouvre un shell `ci` sur le port en écoute."
+      ],
+      "privesc": [
+        "Le réflexe `sudo -l` en arrivant.",
+        "`nmap` est autorisé en NOPASSWD — son vieux mode `--interactive` est un classique GTFOBins (il permet de lancer un shell avec `!sh`).",
+        "Lance `sudo nmap --interactive`, puis dans l'invite tape `!sh` pour obtenir un shell root."
+      ]
+    }
+  },
+  {
     "id": "axiom",
     "name": "AXIOM",
     "ip": "10.10.11.244",

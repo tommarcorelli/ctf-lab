@@ -11,7 +11,7 @@ Aucun build : ouvre simplement `index.html` dans un navigateur.
 ```
 index.html        Page + layout (sidebar machines + terminal)
 css/style.css      Thème sombre / clair / contraste élevé, effets FX
-js/machines.js     Données des 11 machines (fs, services, creds, exploits, indices)
+js/machines.js     Données des 12 machines (fs, services, creds, exploits, indices)
 js/engine.js        Moteur : FS virtuel, commandes, pipes, scoring, badges, records, write-up, sauvegarde
 js/app.js           Liaison DOM <-> moteur (input, prompt, toasts, sidebar, particules, PWA)
 manifest.json      Manifeste PWA (installation, icône, nom)
@@ -39,6 +39,8 @@ utilisés sont sauvegardés dans le `localStorage` du navigateur (clé `ctf_lab_
   www-data → sudo GTFOBins (`tar --checkpoint`)
 - **CITADEL** (expert) — **hôte interne** injoignable directement : pivot via NEXUS rooté (`ssh -L`) →
   SSH sur l'IP interne → sudo GTFOBins (`perl`)
+- **TEMPEST** (difficile) — CI/CD avec un bucket de déploiement **inscriptible** (`cloudctl cp`) dont le
+  contenu est exécuté par le pipeline (RCE) → shell `ci` → sudo GTFOBins (`nmap --interactive`)
 - **AXIOM** (insane) — logs CI/CD exposés → SSH → appartenance au groupe `docker` (équivalent root via
   montage du disque hôte dans un conteneur)
 
@@ -77,7 +79,7 @@ l'autre sans backend.
 
 ## Mode Jeopardy
 
-En plus des 11 machines en mode boîte, un mini mode Jeopardy propose 7 défis indépendants
+En plus des 12 machines en mode boîte, un mini mode Jeopardy propose 7 défis indépendants
 (Crypto ×4, Forensics ×2, Misc ×1) : `challenges` pour la liste, `challenge <id>` pour l'énoncé,
 `chint <id>` pour des indices progressifs, `submit <id> <flag>` pour valider. Les points s'ajoutent
 au score global (donc au niveau/XP). Le défi "Mot de passe recyclé" s'appuie sur un vrai petit
@@ -169,12 +171,12 @@ tout seul en style Windows.
 
 `node tests/run.js` lance une suite de tests zéro-dépendance (Node uniquement, pas de framework)
 qui charge `machines.js` + `engine.js` dans un contexte isolé et rejoue : le parsing/les pipes,
-l'exploitation complète des 11 machines (recon → accès → privesc → 2 flags chacune), le
+l'exploitation complète des 12 machines (recon → accès → privesc → 2 flags chacune), le
 remboursement de `reset`, la résolution des 6 défis Jeopardy et le mode Insane. À lancer après
 toute modification de `engine.js` ou `machines.js` pour éviter une régression silencieuse.
 
 `node tools/solve.js` est un **solveur automatique** (dev only, jamais embarqué dans le jeu) :
-il rejoue la solution officielle des 11 machines dans le vrai moteur et vérifie qu'aucun chemin
+il rejoue la solution officielle des 12 machines dans le vrai moteur et vérifie qu'aucun chemin
 d'exploit n'est cassé (les 5 jalons + le flag root de chaque machine). Code de sortie non-nul
 en cas de régression, donc utilisable en CI. Options : `--verbose` (chaque commande + sa sortie),
 `--walkthrough` (pas-à-pas propre), `--machine <id>` (une seule machine). Utile comme smoke test

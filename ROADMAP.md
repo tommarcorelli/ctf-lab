@@ -21,7 +21,7 @@ reverse shell manuel sur MERIDIAN, `validateMachines` en garde-fou de schéma) :
    stabilisé (sinon double la charge de maintenance à chaque nouvelle machine). **Dernier
    item de Phase 3 encore ouvert.**
 
-> ✅ **Phase 2 entièrement terminée** (STRATUS cloud / NEXUS webshell / CITADEL pivot, 8 → **11
+> ✅ **Phase 2 entièrement terminée** (STRATUS cloud / NEXUS webshell / CITADEL pivot / TEMPEST cloud-RCE, 8 → **12
 > machines**). **Phase 3 quasi bouclée** : solveur automatique (`tools/solve.js`), extraction
 > JSON pure des machines (`tools/export-machines-json.js` → `machines.json`) et **vrai parser
 > shell** (`$VAR`, `$(...)`, redirections `2>`/`&>`) livrés. Il ne reste que l'i18n FR/EN.
@@ -57,9 +57,16 @@ reverse shell manuel sur MERIDIAN, `validateMachines` en garde-fou de schéma) :
 ## 📚 Phase 2 — Contenu (plus de machines, plus de variété)
 
 - [x] **Monter à 8-10 machines** avec une vraie courbe de difficulté (Facile → Moyen →
-      Difficile → Insane) — objectif dépassé : **11 machines**, avec en plus STRATUS (cloud
-      public), NEXUS (upload de webshell) et CITADEL (pivot interne). L'ordre du tableau reste
-      la courbe de déblocage, AXIOM (Insane) demeure le final narratif.
+      Difficile → Insane) — objectif dépassé : **12 machines**, avec en plus STRATUS (cloud
+      public), NEXUS (upload de webshell), CITADEL (pivot interne) et TEMPEST (bucket de
+      déploiement inscriptible → RCE). L'ordre du tableau reste la courbe de déblocage, AXIOM
+      (Insane) demeure le final narratif.
+- [x] **Cloud inscriptible → RCE (`cloudctl cp`)** — au-delà du bucket public en lecture
+      (STRATUS), un bucket `writable` marqué `deploy` voit son contenu exécuté automatiquement
+      par le pipeline CI : `cloudctl cp <payload> s3://<bucket>/`, avec une écoute `nc -lvnp`
+      préalable, déclenche un callback et ouvre un accès (machine **TEMPEST**). Testé dans
+      `tests/run.js` (écriture refusée sur un bucket lecture seule, cp sans écoute sans effet,
+      cp + écoute → accès).
 - [x] **Nouvelles familles de vulnérabilités**, toujours simulées (pas de vrai service qui
       tourne) :
       - [x] Web : faux login vulnérable à une injection SQL simplifiée (`curl -d`, bypass
@@ -148,7 +155,7 @@ reverse shell manuel sur MERIDIAN, `validateMachines` en garde-fou de schéma) :
 ## 🔧 Phase 3 — Technique / fiabilité
 
 - [x] **Suite de tests unitaires du moteur** — `tests/run.js` (Node, zéro dépendance) : parsing
-      et pipes, exploit complet des 11 machines (recon → accès → privesc → 2 flags), cohérence
+      et pipes, exploit complet des 12 machines (recon → accès → privesc → 2 flags), cohérence
       du score, remboursement de `reset`, résolution des défis Jeopardy, mode Insane, éditeur
       `vim` (création/édition/`:q!`, alternative à `echo >>` pour le privesc cron), bannière
       `nc`, cloud (`cloudctl`), upload de webshell et pivot `ssh -L`. 167 assertions au total. Lancer avec `node tests/run.js`. A déjà détecté plusieurs

@@ -1587,7 +1587,27 @@ function cmdCloudctl(args) {
     if (!dst) return out("usage: cloudctl cp <fichier_local> s3://<bucket>/", "t-err");
     const hit = findBucket(dst.bucket);
     if (!hit) return out(`cloudctl: bucket introuvable : ${dst.bucket}`, "t-err");
-    if (!hit.bucket.public) return out(`cloudctl: AccessDenied — écriture refusée sur s3://${dst.bucket} (bucket privé).`, "t-err");
+    if (!hit.bucket.writable) return out(`cloudctl: AccessDenied — écriture refusée sur s3://${dst.bucket} (lecture seule).`, "t-err");
+    // Bucket de déploiement writable : son contenu est récupéré et exécuté automatiquement
+    // par le pipeline CI côté serveur -> exécution de code à distance. Si le joueur écoute
+    // (nc -lvnp <port>), le "déploiement" rappelle vers lui et ouvre un accès.
+    if (hit.bucket.deploy) {
+      if (SESSION.listening === null) {
+        return out(
+          "(objet téléversé — mais ce bucket est déployé/exécuté automatiquement côté serveur : " +
+            "mets-toi d'abord en écoute avec `nc -lvnp <port>` pour recevoir le callback du pipeline)",
+          "t-err",
+        );
+      }
+      const port = SESSION.listening;
+      SESSION.listening = null;
+      return grantAccess(
+        hit.machine,
+        hit.bucket.deploy.user,
+        `Le pipeline de déploiement a récupéré et exécuté ton objet depuis s3://${dst.bucket}/ — ` +
+          `connexion entrante sur le port ${port} depuis ${hit.machine.ip} !\n`,
+      );
+    }
     return out(`upload: ${args[1] || "(fichier)"} -> s3://${dst.bucket}/ (accepté — le bucket autorise l'écriture publique).`, "t-ok");
   }
   return out(`cloudctl: sous-commande inconnue : ${sub} (essaie \`cloudctl --help\`)`, "t-err");

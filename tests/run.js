@@ -220,6 +220,20 @@ const MACHINE_SOLUTIONS = {
     run(ctx, "sudo perl -e 'exec \"/bin/sh\";'");
     return run(ctx, "cat /root/root.txt");
   },
+  tempest: (ctx) => {
+    run(ctx, "exit"); // pour attraper le callback, être sur sa propre box
+    run(ctx, "nmap 10.10.11.150");
+    run(ctx, "curl http://10.10.11.150:8080/");
+    run(ctx, "cloudctl ls");
+    run(ctx, "cloudctl get s3://tempest-artifacts/build.log");
+    run(ctx, "nc -lvnp 4444");
+    run(ctx, "cloudctl cp reverse.sh s3://tempest-deploy/");
+    run(ctx, "cat user.txt");
+    run(ctx, "sudo -l");
+    run(ctx, "sudo nmap --interactive");
+    run(ctx, "!sh");
+    return run(ctx, "cat /root/root.txt");
+  },
   axiom: (ctx) => {
     run(ctx, "nmap 10.10.11.244");
     run(ctx, "curl http://10.10.11.244:8080/");
@@ -239,7 +253,7 @@ section("Machines : recon -> accès -> privesc -> flags (les 8 machines)", () =>
   const ctx = freshContext();
   unlockAll(ctx);
   const machines = get(ctx, "MACHINES");
-  assertEqual(machines.length, 11, "11 machines définies dans MACHINES");
+  assertEqual(machines.length, 12, "12 machines définies dans MACHINES");
 
   let totalScoreCheck = 0;
   for (const m of machines) {
@@ -254,8 +268,8 @@ section("Machines : recon -> accès -> privesc -> flags (les 8 machines)", () =>
   }
 
   const finalScore = get(ctx, "GAME.score");
-  // 11 machines * (100 recon + 150 accès + 250 privesc + 100 userFlag + 200 rootFlag) = 11 * 800 = 8800
-  assertEqual(finalScore, 8800, "score total cohérent après les 11 machines (100+150+250+100+200 par machine)");
+  // 12 machines * (100 recon + 150 accès + 250 privesc + 100 userFlag + 200 rootFlag) = 12 * 800 = 9600
+  assertEqual(finalScore, 9600, "score total cohérent après les 12 machines (100+150+250+100+200 par machine)");
 
   const badges = get(ctx, "GAME.badges");
   assert(badges["completionist"] === true, "badge 🌐 tour complet débloqué après les 8 machines");
@@ -609,6 +623,31 @@ section("Pivot multi-hop : hôte interne via tunnel ssh -L (CITADEL)", () => {
   run(ctx, "sudo perl -e 'exec \"/bin/sh\";'");
   const flag = run(ctx, "cat /root/root.txt");
   assert(/FLAG\{citadel_root/.test(flag.text), "flag root CITADEL capturé après pivot + privesc");
+});
+
+// ── 14bis. Cloud writable : cloudctl cp -> RCE via pipeline (TEMPEST) ─────────
+section("Cloud inscriptible : cloudctl cp -> RCE (TEMPEST)", () => {
+  const ctx = freshContext();
+  unlockAll(ctx);
+  run(ctx, "use tempest");
+  run(ctx, "nmap 10.10.11.150");
+
+  // Un bucket en lecture seule refuse l'écriture.
+  const ro = run(ctx, "cloudctl cp x.sh s3://tempest-artifacts/");
+  assert(ro.cls === "t-err" && /AccessDenied/.test(ro.text), "un bucket non-inscriptible refuse cloudctl cp");
+
+  // Le bucket de déploiement est inscriptible, mais rien sans écoute préalable.
+  const noListen = run(ctx, "cloudctl cp reverse.sh s3://tempest-deploy/");
+  assert(noListen.cls === "t-err" && /nc -lvnp/.test(noListen.text), "cp sur le bucket deploy sans écoute -> pas d'accès");
+  assertEqual(get(ctx, "GAME.progress.tempest.access"), false, "aucun accès tant qu'on n'écoute pas");
+
+  // En écoute, le pipeline exécute l'objet et rappelle -> accès.
+  run(ctx, "nc -lvnp 4444");
+  const shell = run(ctx, "cloudctl cp reverse.sh s3://tempest-deploy/");
+  assert(shell.cls !== "t-err" && /pipeline de déploiement/.test(shell.text), "cp + écoute -> le pipeline exécute et rappelle");
+  assertEqual(get(ctx, "GAME.progress.tempest.access"), true, "accès ci obtenu via le bucket inscriptible");
+  assertEqual(get(ctx, "SESSION.user"), "ci", "la reverse shell atterrit en tant que ci");
+  assert(/FLAG\{tempest_acces_initial/.test(run(ctx, "cat user.txt").text), "flag utilisateur TEMPEST lisible");
 });
 
 // ── 15. Parser shell : variables, substitution, redirections ─────────────────
