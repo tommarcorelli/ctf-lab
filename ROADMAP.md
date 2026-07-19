@@ -345,9 +345,12 @@ reverse shell manuel sur MERIDIAN, `validateMachines` en garde-fou de schéma) :
       difficulté, avec toggle marche/arrêt (bouton 🎧 dans l'en-tête, désactivé par défaut) — à
       ne pas confondre avec le petit son de capture de flag déjà prévu en Phase 1, ici c'est une
       ambiance continue qui change de preset selon la machine courante.
-- [ ] **Time machine de session** — undo/redo de l'état du FS courant à l'intérieur d'une
-      machine (pas du game state global), pour explorer/tester des commandes destructrices
-      sans avoir à tout recharger
+- [x] **Time machine de session** — **`undo`** / **`redo`** de l'état du système de fichiers courant
+      (pas du game state) : un snapshot du FS est empilé avant chaque écriture (`echo >>`, `vim :wq`,
+      montage `ftp`) via `snapshotFS`, et `undo`/`redo` naviguent dans l'historique (`SESSION.fsHistory`,
+      plafonné à 40). L'historique est réinitialisé à chaque changement de contexte FS (accès à une
+      machine, montage sandbox, retour attaquant). Testé dans `tests/run.js` (echo>>/undo/redo, vim,
+      reset au changement de contexte).
 
 ⚠️ **Idée évoquée puis écartée dans cette vague** : un export "rapport de pentest en PDF".
 Impossible à faire proprement en vanilla JS sans lib externe type jsPDF (contredit le

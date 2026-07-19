@@ -1121,6 +1121,40 @@ section("Arbre de compétences : skills, rangs, déblocage par palier", () => {
   assert(/netname/.test(run(ctx, "whois 10.10.11.21").text), "whois fournit une fiche réseau une fois débloqué");
 });
 
+// ── 28. Time-machine du FS : undo / redo ─────────────────────────────────────
+section("Time-machine du FS : undo / redo", () => {
+  const ctx = freshContext();
+  run(ctx, "sandbox");
+  const orig = run(ctx, "cat README.txt").text;
+
+  // Rien à annuler au départ
+  assert(/Rien à annuler/.test(run(ctx, "undo").text), "undo sans modification n'a rien à annuler");
+
+  // Modification via echo >> (snapshot pris)
+  run(ctx, "echo LIGNE_AJOUTEE >> README.txt");
+  assert(/LIGNE_AJOUTEE/.test(run(ctx, "cat README.txt").text), "l'ajout est bien écrit");
+
+  // undo -> contenu restauré
+  run(ctx, "undo");
+  assertEqual(run(ctx, "cat README.txt").text, orig, "undo restaure le contenu d'origine du fichier");
+
+  // redo -> ajout rétabli
+  run(ctx, "redo");
+  assert(/LIGNE_AJOUTEE/.test(run(ctx, "cat README.txt").text), "redo rétablit la modification");
+
+  // Éditer via vim est aussi annulable
+  run(ctx, "vim notes.txt");
+  run(ctx, "contenu vim");
+  run(ctx, ":wq");
+  assert(/contenu vim/.test(run(ctx, "cat notes.txt").text), "vim a écrit le fichier");
+  run(ctx, "undo");
+  assert(run(ctx, "cat notes.txt").cls === "t-err" || !/contenu vim/.test(run(ctx, "cat notes.txt").text), "undo annule aussi l'écriture via vim");
+
+  // Changer de contexte FS réinitialise l'historique
+  run(ctx, "exit");
+  assert(/Rien à annuler/.test(run(ctx, "undo").text), "quitter le sandbox réinitialise l'historique du FS");
+});
+
 // ── Rapport final ─────────────────────────────────────────────────────────────
 Promise.all(pendingAsync).then(() => {
   console.log(`\n${"─".repeat(60)}`);

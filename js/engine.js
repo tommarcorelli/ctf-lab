@@ -112,7 +112,28 @@ const SESSION = {
   tunnel: null,          // { localPort, targetIp, targetPort } — tunnel ssh -L actif (pivot)
   sandbox: false,        // true en mode bac à sable libre (FS custom, sans flag ni score)
   firewall: null,        // { id, policy, rules } — scénario de pare-feu en cours, ou null
+  fsHistory: { past: [], future: [] }, // time-machine : snapshots du FS courant (undo/redo)
 };
+
+// ── Time-machine du FS : undo/redo de l'état du système de fichiers courant ──
+function resetFSHistory() { SESSION.fsHistory = { past: [], future: [] }; }
+function snapshotFS() {
+  SESSION.fsHistory.past.push(JSON.stringify(SESSION.fs));
+  if (SESSION.fsHistory.past.length > 40) SESSION.fsHistory.past.shift();
+  SESSION.fsHistory.future = [];
+}
+function cmdUndo() {
+  if (!SESSION.fsHistory.past.length) return out("Rien à annuler (aucune modification du système de fichiers).", "t-hint");
+  SESSION.fsHistory.future.push(JSON.stringify(SESSION.fs));
+  SESSION.fs = JSON.parse(SESSION.fsHistory.past.pop());
+  return out("↶ Dernière modification du FS annulée. (`redo` pour rétablir)");
+}
+function cmdRedo() {
+  if (!SESSION.fsHistory.future.length) return out("Rien à rétablir.", "t-hint");
+  SESSION.fsHistory.past.push(JSON.stringify(SESSION.fs));
+  SESSION.fs = JSON.parse(SESSION.fsHistory.future.pop());
+  return out("↷ Modification du FS rétablie.");
+}
 
 // Une machine "interne" (machine.internal) n'est routable qu'à travers un tunnel ssh -L
 // pointant vers son IP (établi depuis un pivot déjà rooté). Les autres sont toujours joignables.
@@ -267,6 +288,7 @@ function resetSessionToAttacker() {
   SESSION.fs = buildAttackerFS();
   SESSION.pagerMode = null;
   SESSION.sandbox = false;
+  resetFSHistory();
 }
 
 // ── Bac à sable libre : FS custom, sans machine, sans flag ni scoring ─────────
@@ -302,6 +324,7 @@ function buildSandboxFS(spec) {
 }
 function mountSandbox(spec) {
   SESSION.fs = buildSandboxFS(spec);
+  resetFSHistory();
   SESSION.ctx = "attacker"; // pas de machine -> pas de scan de flag ni de scoring
   SESSION.user = "hacker";
   SESSION.host = "sandbox";
@@ -521,6 +544,7 @@ function writeStdoutToFile(targetArg, text, append) {
     const machine = getMachine(SESSION.ctx);
     if ((machine.privesc.type === "cron-writable" || machine.privesc.type === "schtask-writable") && p === machine.privesc.scriptPath) {
       if (!node) return out(`bash: ${targetArg}: Fichier introuvable`, "t-err");
+      snapshotFS();
       node.content += "\n" + text;
       checkAndPlant(machine, p);
       return out("");
@@ -528,6 +552,7 @@ function writeStdoutToFile(targetArg, text, append) {
   }
   if (!node) return out(`bash: ${targetArg}: Fichier introuvable`, "t-err");
   if (!canWrite(node, node.owner === SESSION.user)) return out(`bash: ${targetArg}: Permission refusée`, "t-err");
+  snapshotFS();
   node.content = append ? (node.content || "") + "\n" + text : text;
   return out("");
 }
@@ -597,7 +622,7 @@ const KNOWN_COMMANDS = [
   "dir", "type", "net", "schtasks", "icacls", "vim", "nc", "arp", "cloudctl", "generate", "replay", "sandbox",
   "blueteam", "incident", "answer", "bthint", "firewall", "iptables",
   "phishing", "inbox", "mail", "report", "phhint",
-  "malware", "re", "strings", "disas", "disasm", "resolve", "rehint", "graph", "stack", "skills", "whois",
+  "malware", "re", "strings", "disas", "disasm", "resolve", "rehint", "graph", "stack", "skills", "whois", "undo", "redo",
 ];
 const PATH_COMMANDS = ["cd", "ls", "cat", "find", "dir", "type", "icacls", "vim"];
 
@@ -2202,6 +2227,8 @@ function dispatch(cmd, args, rawFirst) {
     }
     case "skills": return cmdSkills();
     case "whois": return cmdWhois(args);
+    case "undo": return cmdUndo();
+    case "redo": return cmdRedo();
     case "history": return out(SESSION.history.slice(0, -1).join("\n"));
     case "whoami": {
       if (isWinCtx()) {
@@ -2301,7 +2328,7 @@ function cmdHelp() {
     "Reverse : malware (liste), strings <id>, disas <id>, resolve <id> <question> <valeur>, rehint <id> <question>\n" +
     "Reconnaissance : nmap <ip>, nmap <cidr> (balayage de sous-réseau via un pivot), arp -a, curl <url>, ftp <ip>, nc <ip> <port>, cloudctl ls|get|cp\n" +
     "Accès : ssh <user>@<ip> [-p <port>], curl -F \"file=@<webshell>\" <url> (upload), ssh -L <lport>:<hôte_interne>:<port> <user>@<pivot> (tunnel/pivot)\n" +
-    "Système (une fois connecté ou en local) : ls [-la], cd, pwd, cat, find, echo, vim <fichier>, whoami, id, sudo -l, sudo <cmd>, crontab -l, docker ps\n" +
+    "Système (une fois connecté ou en local) : ls [-la], cd, pwd, cat, find, echo, vim <fichier>, whoami, id, sudo -l, sudo <cmd>, crontab -l, docker ps, undo/redo (annuler/rétablir une modif du FS)\n" +
     "Windows (machine cible Windows) : dir, type, net user, net localgroup administrators, schtasks /query, icacls <fichier>\n" +
     "Filtres en pipe : grep, wc -l, sort [-u], head, tail, cut, awk '{print $N}'\n" +
     "Shell : variables $USER/$HOME/$PWD/$HOSTNAME/$UID/$? (${VAR} aussi), substitution $(commande), redirections > >> 2> &> 2>/dev/null\n" +
@@ -2739,6 +2766,7 @@ function handleVimInput(line) {
   const v = SESSION.vimMode;
   if (line === ":wq" || line === ":x" || line === ":wq!") {
     const content = v.lines.join("\n");
+    snapshotFS();
     let node = SESSION.fs[v.path];
     if (!node) {
       node = { type: "file", perms: "-rw-r--r--", owner: SESSION.user, content };
@@ -2974,6 +3002,7 @@ function cmdFtp(args) {
   if (!machine.ftp || !machine.ftp.enabled) return out(`ftp: connexion refusée sur ${ip} (aucun service FTP)`, "t-err");
   const dirName = `loot/${machine.id}-ftp`;
   const dirPath = SESSION.home + "/" + dirName;
+  snapshotFS();
   if (!SESSION.fs[dirPath]) SESSION.fs[dirPath] = { type: "dir" };
   for (const [name, content] of Object.entries(machine.ftp.files)) {
     SESSION.fs[dirPath + "/" + name] = { type: "file", perms: "-rw-r--r--", owner: "ftp", content };
@@ -3039,6 +3068,7 @@ function grantAccess(machine, user, introExtra) {
   SESSION.home = machine.targetFS.homeDir;
   SESSION.cwd = machine.targetFS.homeDir;
   SESSION.fs = buildTargetFS(machine, user);
+  resetFSHistory();
   SESSION.activeMachine = machine.id;
   SESSION.sudoAttempts[machine.id] = 0;
   SESSION.sudoLocked[machine.id] = false;
