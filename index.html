@@ -77,7 +77,7 @@
     </section>
 
     <aside id="side-pane" class="side-pane hidden">
-      <div class="side-pane-h"><span>📜 Journal</span><button id="side-clear" class="side-clear" type="button" title="Vider le journal">⌫</button></div>
+      <div class="side-pane-h"><span data-i18n="journal.title">📜 Journal</span><button id="side-clear" class="side-clear" type="button" title="Vider le journal">⌫</button></div>
       <div id="side-pane-body" class="side-pane-body" role="log" aria-live="polite"></div>
     </aside>
   </main>
@@ -85,10 +85,10 @@
   <div id="editor-modal" class="editor-modal hidden" role="dialog" aria-modal="true" aria-labelledby="editor-title">
     <div class="editor-card">
       <div class="editor-head">
-        <h2 id="editor-title">🛠️ Créer une machine</h2>
+        <h2 id="editor-title" data-i18n="editor.title">🛠️ Créer une machine</h2>
         <button id="editor-close" class="editor-close" type="button" aria-label="Fermer l'éditeur">✕</button>
       </div>
-      <p class="editor-desc">
+      <p class="editor-desc" data-i18n-html="editor.desc">
         Décris une machine en JSON (même schéma que <code>machines.js</code>, regex d'exploit en
         chaînes). « Valider &amp; charger » la teste dans le vrai moteur et l'ajoute à la liste
         (bac à sable, non sauvegardée). « Télécharger .json » l'exporte pour l'intégrer à
@@ -97,11 +97,11 @@
       <textarea id="editor-json" class="editor-json" spellcheck="false" aria-label="Définition JSON de la machine"></textarea>
       <div id="editor-msg" class="editor-msg" role="status" aria-live="polite"></div>
       <div class="editor-actions">
-        <button id="editor-load" class="editor-btn primary" type="button">Valider &amp; charger</button>
-        <button id="editor-generate" class="editor-btn" type="button">🎲 Générer</button>
-        <button id="editor-share" class="editor-btn" type="button">Lien de partage</button>
-        <button id="editor-download" class="editor-btn" type="button">Télécharger .json</button>
-        <button id="editor-reset" class="editor-btn" type="button">Modèle par défaut</button>
+        <button id="editor-load" class="editor-btn primary" type="button" data-i18n="editor.load">Valider &amp; charger</button>
+        <button id="editor-generate" class="editor-btn" type="button" data-i18n="editor.generate">🎲 Générer</button>
+        <button id="editor-share" class="editor-btn" type="button" data-i18n="editor.share">Lien de partage</button>
+        <button id="editor-download" class="editor-btn" type="button" data-i18n="editor.download">Télécharger .json</button>
+        <button id="editor-reset" class="editor-btn" type="button" data-i18n="editor.reset">Modèle par défaut</button>
       </div>
     </div>
   </div>
@@ -109,20 +109,20 @@
   <div id="replay-modal" class="editor-modal hidden" role="dialog" aria-modal="true" aria-labelledby="replay-title">
     <div class="editor-card replay-card">
       <div class="editor-head">
-        <h2 id="replay-title">▶️ Replay de session</h2>
+        <h2 id="replay-title" data-i18n="replay.title">▶️ Replay de session</h2>
         <button id="replay-close" class="editor-close" type="button" aria-label="Fermer le replay">✕</button>
       </div>
-      <p class="editor-desc">
+      <p class="editor-desc" data-i18n-html="replay.desc">
         Rejoue tes commandes et leurs sorties façon asciinema — <strong>sans les ré-exécuter</strong>,
         donc ta progression n'est pas touchée. Exporte le replay en <code>.json</code> pour le rejouer
         plus tard ou le partager.
       </p>
       <div id="replay-output" class="term-output replay-output" role="log" aria-live="polite"></div>
       <div class="editor-actions">
-        <button id="replay-play" class="editor-btn primary" type="button">Rejouer</button>
-        <button id="replay-download" class="editor-btn" type="button">Télécharger .json</button>
-        <button id="replay-open" class="editor-btn" type="button">Charger un replay</button>
-        <button id="replay-ghost" class="editor-btn" type="button">👻 Charger un fantôme</button>
+        <button id="replay-play" class="editor-btn primary" type="button" data-i18n="replay.play">Rejouer</button>
+        <button id="replay-download" class="editor-btn" type="button" data-i18n="replay.download">Télécharger .json</button>
+        <button id="replay-open" class="editor-btn" type="button" data-i18n="replay.open">Charger un replay</button>
+        <button id="replay-ghost" class="editor-btn" type="button" data-i18n="replay.ghost">👻 Charger un fantôme</button>
         <span id="replay-status" class="replay-status" aria-live="polite"></span>
       </div>
     </div>
@@ -131,10 +131,10 @@
   <div id="sandbox-modal" class="editor-modal hidden" role="dialog" aria-modal="true" aria-labelledby="sandbox-title">
     <div class="editor-card">
       <div class="editor-head">
-        <h2 id="sandbox-title">🧪 Bac à sable libre</h2>
+        <h2 id="sandbox-title" data-i18n="sandbox.title">🧪 Bac à sable libre</h2>
         <button id="sandbox-close" class="editor-close" type="button" aria-label="Fermer le bac à sable">✕</button>
       </div>
-      <p class="editor-desc">
+      <p class="editor-desc" data-i18n-html="sandbox.desc">
         Monte un système de fichiers à toi pour t'entraîner aux commandes (<code>ls</code>,
         <code>cat</code>, <code>find</code>, <code>grep</code>, <code>vim</code>, pipes…),
         <strong>sans flag ni score</strong>. Format : un objet <code>{ "chemin": "contenu" }</code>
@@ -144,8 +144,8 @@
       <textarea id="sandbox-json" class="editor-json" spellcheck="false" aria-label="Arborescence JSON du bac à sable"></textarea>
       <div id="sandbox-msg" class="editor-msg" role="status" aria-live="polite"></div>
       <div class="editor-actions">
-        <button id="sandbox-mount" class="editor-btn primary" type="button">Monter le FS</button>
-        <button id="sandbox-demo" class="editor-btn" type="button">FS de démo</button>
+        <button id="sandbox-mount" class="editor-btn primary" type="button" data-i18n="sandbox.mount">Monter le FS</button>
+        <button id="sandbox-demo" class="editor-btn" type="button" data-i18n="sandbox.demo">FS de démo</button>
       </div>
     </div>
   </div>
@@ -153,25 +153,25 @@
   <div id="graph-modal" class="editor-modal hidden" role="dialog" aria-modal="true" aria-labelledby="graph-title">
     <div class="editor-card">
       <div class="editor-head">
-        <h2 id="graph-title">🗺️ Graphe d'attaque</h2>
+        <h2 id="graph-title" data-i18n="graph.title">🗺️ Graphe d'attaque</h2>
         <button id="graph-close" class="editor-close" type="button" aria-label="Fermer le graphe">✕</button>
       </div>
       <div class="graph-toolbar">
-        <label for="graph-select">Machine :</label>
+        <label for="graph-select" data-i18n="graph.machine">Machine :</label>
         <select id="graph-select" class="graph-select"></select>
       </div>
       <div id="graph-container" class="graph-container"></div>
-      <p class="editor-desc">Les nœuds s'allument à mesure que tu progresses : recon → accès initial → élévation de privilèges → flags.</p>
+      <p class="editor-desc" data-i18n="graph.desc">Les nœuds s'allument à mesure que tu progresses : recon → accès initial → élévation de privilèges → flags.</p>
     </div>
   </div>
 
   <div id="stack-modal" class="editor-modal hidden" role="dialog" aria-modal="true" aria-labelledby="stack-title">
     <div class="editor-card">
       <div class="editor-head">
-        <h2 id="stack-title">🧠 Buffer overflow (pédagogique)</h2>
+        <h2 id="stack-title" data-i18n="stack.title">🧠 Buffer overflow (pédagogique)</h2>
         <button id="stack-close" class="editor-close" type="button" aria-label="Fermer le défi pile">✕</button>
       </div>
-      <p class="editor-desc">
+      <p class="editor-desc" data-i18n-html="stack.desc">
         Une fonction lit une entrée dans <code>char buf[16]</code> sans vérifier la taille. La pile
         contient ensuite le <strong>RBP sauvé</strong> (8 o) puis l'<strong>adresse de retour</strong>
         (8 o, offset 24). Fais déborder le buffer pour écraser l'adresse de retour avec l'adresse de
@@ -179,9 +179,9 @@
         c'est un schéma pédagogique.
       </p>
       <div class="stack-toolbar">
-        <label>Octets de bourrage : <input id="stack-fill" class="stack-input" type="number" min="0" value="0"></label>
-        <label>Adresse de retour : <input id="stack-addr" class="stack-input" type="text" placeholder="0x401156" size="12"></label>
-        <button id="stack-inject" class="editor-btn primary" type="button">Injecter</button>
+        <label><span data-i18n="stack.fill">Octets de bourrage :</span> <input id="stack-fill" class="stack-input" type="number" min="0" value="0"></label>
+        <label><span data-i18n="stack.addr">Adresse de retour :</span> <input id="stack-addr" class="stack-input" type="text" placeholder="0x401156" size="12"></label>
+        <button id="stack-inject" class="editor-btn primary" type="button" data-i18n="stack.inject">Injecter</button>
       </div>
       <div id="stack-viz" class="stack-viz-wrap"></div>
       <div id="stack-verdict" class="editor-msg"></div>
