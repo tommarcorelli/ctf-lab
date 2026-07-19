@@ -333,6 +333,11 @@ function downloadFromEditor() {
   try { id = (JSON.parse(json).id || "machine").replace(/[^a-z0-9_-]/gi, "") || "machine"; } catch (e) {}
   downloadText(`${id}.json`, json, "application/json");
 }
+function generateInEditor() {
+  const gen = generateMachine();
+  editorEl("editor-json").value = JSON.stringify(gen.machine, null, 2);
+  setEditorMsg(`🎲 Machine « ${escapeHtml(gen.machine.name)} » générée (seed <code>${escapeHtml(gen.seed)}</code>). « Valider &amp; charger » pour la jouer, ou « Lien de partage » pour l'envoyer.`, "ok");
+}
 function shareEditorLink() {
   const json = editorEl("editor-json").value;
   try { JSON.parse(json); } catch (e) {
@@ -775,6 +780,7 @@ function boot() {
   document.getElementById("editor-close").addEventListener("click", closeEditor);
   document.getElementById("editor-load").addEventListener("click", loadFromEditor);
   document.getElementById("editor-download").addEventListener("click", downloadFromEditor);
+  document.getElementById("editor-generate").addEventListener("click", generateInEditor);
   document.getElementById("editor-share").addEventListener("click", shareEditorLink);
   document.getElementById("editor-reset").addEventListener("click", () => { editorEl("editor-json").value = EDITOR_TEMPLATE; setEditorMsg(""); });
   document.getElementById("editor-modal").addEventListener("click", (e) => { if (e.target.id === "editor-modal") closeEditor(); });

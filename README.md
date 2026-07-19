@@ -151,6 +151,12 @@ Le bouton **« Lien de partage »** encode la machine en base64url dans un lien
 `index.html#machine=<token>` (copié dans le presse-papiers) : ouvrir ce lien décode, valide et
 charge automatiquement la machine — un scénario se partage donc en une URL, sans aucun serveur.
 
+La commande **`generate [seed]`** (ou le bouton **🎲 Générer** de l'éditeur) produit une machine
+**procédurale** jouable : un algorithme JS pur (PRNG seedé, zéro IA) combine une brique de vecteur
+d'accès (FTP / config web / bucket cloud) et une brique de privesc (sudo GTFOBins) tirées de pools.
+Le seed est déterministe (même seed → même machine), donc une machine générée se rejoue ou se
+partage à l'identique.
+
 ## Ajouter une machine
 
 Ajoute un objet dans `MACHINES` (`js/machines.js`) avec le même schéma que les machines

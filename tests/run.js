@@ -807,6 +807,47 @@ section("Partage par URL : encodeScenario / decodeScenario", () => {
   assertEqual(corrupt, "threw", "un token corrompu ne produit pas un JSON valide (erreur gérée en amont)");
 });
 
+// ── 18. Générateur procédural de machines ────────────────────────────────────
+section("Générateur procédural : machines valides et jouables", () => {
+  // Déterminisme : même seed -> même machine
+  const c1 = freshContext();
+  const g1 = get(c1, `generateMachine("graine-42")`);
+  const g2 = get(c1, `generateMachine("graine-42")`);
+  assertEqual(g1.machine.id, g2.machine.id, "même seed -> même id");
+  assertEqual(g1.machine.ip, g2.machine.ip, "même seed -> même ip");
+  assertEqual(g1.machine.rootFile.content, g2.machine.rootFile.content, "même seed -> même flag root");
+  const g3 = get(c1, `generateMachine("autre-graine")`);
+  assert(g3.machine.id !== g1.machine.id, "un seed différent produit une machine différente");
+
+  // Plusieurs seeds : schéma valide + exploitation complète via le walkthrough généré
+  const seeds = ["alpha", "bravo", "charlie", "delta-9", "1234"];
+  for (const seed of seeds) {
+    const ctx = freshContext();
+    const gen = get(ctx, `generateMachine(${JSON.stringify(seed)})`);
+    const errs = get(ctx, `validateMachines([compileRegexesDeep(generateMachine(${JSON.stringify(seed)}).machine)])`);
+    assertEqual(errs.length, 0, `seed ${seed} : machine conforme au schéma (${JSON.stringify(errs)})`);
+
+    const res = get(ctx, `loadCustomMachine(generateMachine(${JSON.stringify(seed)}).machine)`);
+    assert(res.ok, `seed ${seed} : machine chargée (${JSON.stringify(res.errors)})`);
+
+    run(ctx, "use " + gen.machine.id);
+    for (const step of gen.walkthrough) {
+      if (step && typeof step === "object" && step.pw) pass(ctx, gen.password);
+      else run(ctx, step);
+    }
+    const p = get(ctx, `GAME.progress[${JSON.stringify(gen.machine.id)}]`);
+    assert(p.recon && p.access && p.privesc && p.userFlag && p.rootFlag,
+      `seed ${seed} : machine générée entièrement jouable (recon->privesc->2 flags)`);
+  }
+
+  // La commande `generate <seed>` charge et rend jouable
+  const ctx = freshContext();
+  const out = run(ctx, "generate maquette");
+  assert(out.cls !== "t-err" && /Machine générée/.test(out.text), "`generate <seed>` génère et charge une machine");
+  const gen = get(ctx, `generateMachine("maquette")`);
+  assert(get(ctx, `GAME.unlocked.includes(${JSON.stringify(gen.machine.id)})`), "la machine générée par la commande est déverrouillée");
+});
+
 // ── Rapport final ─────────────────────────────────────────────────────────────
 Promise.all(pendingAsync).then(() => {
   console.log(`\n${"─".repeat(60)}`);

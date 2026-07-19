@@ -513,7 +513,7 @@ const KNOWN_COMMANDS = [
   "challenges", "challenge", "chint", "submit", "hashcat", "daily", "score", "history",
   "whoami", "id", "groups", "pwd", "ls", "cd", "cat", "find", "echo", "nmap", "curl",
   "ftp", "ssh", "sudo", "crontab", "exit", "man", "docker", "export", "import",
-  "dir", "type", "net", "schtasks", "icacls", "vim", "nc", "cloudctl",
+  "dir", "type", "net", "schtasks", "icacls", "vim", "nc", "cloudctl", "generate",
 ];
 const PATH_COMMANDS = ["cd", "ls", "cat", "find", "dir", "type", "icacls", "vim"];
 
@@ -1176,6 +1176,126 @@ function decodeScenario(str) {
   return bytesToUtf8(b64urlToBytes(str));
 }
 
+// ── Générateur procédural de machines (100% JS, pas d'IA externe) ────────────
+// Combine une "brique" de vecteur d'accès et une "brique" de privesc tirées de pools,
+// de façon déterministe à partir d'un seed (même seed -> même machine, partageable).
+// Chaque brique fournit AUSSI ses étapes de solution -> le résultat est garanti jouable.
+const GEN_NAMES = ["ZEPHYR", "ONYX", "QUARTZ", "HALCYON", "RIVET", "COBALT", "EMBER", "SABLE", "VESPER", "NEBULA", "KRAKEN", "LUMEN", "ORACLE", "PRISM", "TALON"];
+const GEN_USERS = ["deploy", "svcacct", "webadmin", "backup", "opsuser", "runner", "devops", "support"];
+function genHashSeed(s) { s = String(s); let h = 2166136261 >>> 0; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return h >>> 0; }
+function genRng(a) { return function () { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+function genSshPort() { return { port: 22, proto: "tcp", state: "open", service: "ssh", version: "OpenSSH 9.2p1" }; }
+
+function genAccessBrick(kind, c) {
+  if (kind === "ftp") {
+    const file = "backup_creds.txt";
+    return {
+      ports: [genSshPort(), { port: 21, proto: "tcp", state: "open", service: "ftp", version: "vsftpd 3.0.3" }],
+      web: {}, ftp: { enabled: true, loginMsg: "220 (vsFTPd 3.0.3)\n230 Connexion anonyme acceptée.", files: { [file]: `# export interne\nSSH ${c.user}:${c.pass}` } },
+      sshUsers: { [c.user]: { password: c.pass } },
+      accessHints: ["Un service FTP anonyme est ouvert.", `Connecte-toi (\`ftp ${c.ip}\`) et lis le fichier récupéré dans ~/loot/${c.id}-ftp/.`, `Il contient des identifiants SSH — \`ssh ${c.user}@${c.ip}\`.`],
+      walkAccess: [`ftp ${c.ip}`, `cat ~/loot/${c.id}-ftp/${file}`, `ssh ${c.user}@${c.ip}`, { pw: true }],
+    };
+  }
+  if (kind === "web") {
+    const path = "/backup/config.bak";
+    return {
+      ports: [genSshPort(), { port: 80, proto: "tcp", state: "open", service: "http", version: "nginx 1.18" }],
+      web: { "/": `<html>\n<!-- sauvegarde oubliée : ${path} -->\n</html>`, [path]: `# config.bak\nSSH_USER=${c.user}\nSSH_PASS=${c.pass}` },
+      ftp: { enabled: false }, sshUsers: { [c.user]: { password: c.pass } },
+      accessHints: ["Un serveur web tourne — regarde son code source.", `\`curl http://${c.ip}/\` : un commentaire pointe vers une sauvegarde.`, `\`curl http://${c.ip}${path}\` fuit des identifiants SSH — \`ssh ${c.user}@${c.ip}\`.`],
+      walkAccess: [`curl http://${c.ip}/`, `curl http://${c.ip}${path}`, `ssh ${c.user}@${c.ip}`, { pw: true }],
+    };
+  }
+  // cloud
+  const bucket = `${c.name.toLowerCase()}-backups`;
+  return {
+    ports: [genSshPort(), { port: 80, proto: "tcp", state: "open", service: "http", version: "nginx 1.18" }],
+    web: { "/": `<html>\n<!-- sauvegardes : s3://${bucket} (public) -->\n</html>` },
+    ftp: { enabled: false }, sshUsers: { [c.user]: { password: c.pass } },
+    cloud: { provider: "s3", buckets: { [bucket]: { public: true, files: { "deploy.env": `SSH_USER=${c.user}\nSSH_PASS=${c.pass}` } } } },
+    accessHints: ["Un stockage objet est mentionné sur le site.", `\`cloudctl ls\` : le bucket \`${bucket}\` est public.`, `\`cloudctl get s3://${bucket}/deploy.env\` fuit des creds SSH — \`ssh ${c.user}@${c.ip}\`.`],
+    walkAccess: [`curl http://${c.ip}/`, `cloudctl get s3://${bucket}/deploy.env`, `ssh ${c.user}@${c.ip}`, { pw: true }],
+  };
+}
+
+function genPrivescBrick(kind, c) {
+  if (kind === "less") {
+    return {
+      sudoL: `L'utilisateur ${c.user} peut lancer :\n    (root) NOPASSWD: /usr/bin/less`,
+      privesc: { type: "sudo-gtfobins", exploitCmdRegex: "^sudo\\s+(/usr/bin/)?less\\s+/etc/hostname$", pagerEscapeRegex: "^!/?(bin/)?sh$|^!bash$", enterMsg: "(pager root ouvert — tape !sh)" },
+      privescHints: ["`sudo -l` en arrivant.", "`less` est autorisé en NOPASSWD — classique GTFOBins (pager -> shell).", "`sudo less /etc/hostname` puis `!sh` dans le pager."],
+      walkPrivesc: ["sudo less /etc/hostname", "!sh"],
+    };
+  }
+  if (kind === "env") {
+    return {
+      sudoL: `L'utilisateur ${c.user} peut lancer :\n    (root) NOPASSWD: /usr/bin/env`,
+      privesc: { type: "sudo-direct", exploitCmdRegex: "^sudo\\s+(/usr/bin/)?env\\s+/bin/sh$", enterMsg: "# (shell root via env -- GTFOBins)" },
+      privescHints: ["`sudo -l` en arrivant.", "`env` est autorisé en NOPASSWD (GTFOBins).", "`sudo env /bin/sh` pour un shell root."],
+      walkPrivesc: ["sudo env /bin/sh"],
+    };
+  }
+  return {
+    sudoL: `L'utilisateur ${c.user} peut lancer :\n    (root) NOPASSWD: /usr/bin/perl`,
+    privesc: { type: "sudo-direct", exploitCmdRegex: "^sudo\\s+(/usr/bin/)?perl\\s+-e\\s+'exec\\s+\"/bin/sh\";?'$", enterMsg: "# (shell root via perl -- GTFOBins)" },
+    privescHints: ["`sudo -l` en arrivant.", "`perl` est autorisé en NOPASSWD (GTFOBins).", "`sudo perl -e 'exec \"/bin/sh\";'` pour un shell root."],
+    walkPrivesc: ["sudo perl -e 'exec \"/bin/sh\";'"],
+  };
+}
+
+// Génère une machine jouable à partir d'un seed (optionnel). Retourne { machine, seed,
+// password, walkthrough } — walkthrough/password servent aux tests et aux indices.
+function generateMachine(seedInput) {
+  const seed = (seedInput === undefined || seedInput === null || seedInput === "") ? `${Date.now()}-${Math.floor(Math.random() * 1e6)}` : String(seedInput);
+  const rnd = genRng(genHashSeed(seed));
+  const pick = (a) => a[Math.floor(rnd() * a.length)];
+  const hex = (n) => { let s = ""; for (let i = 0; i < n; i++) s += Math.floor(rnd() * 16).toString(16); return s; };
+  const name = pick(GEN_NAMES);
+  const id = name.toLowerCase() + "-" + genHashSeed(seed).toString(36).slice(0, 5);
+  const ip = `10.13.${10 + Math.floor(rnd() * 240)}.${10 + Math.floor(rnd() * 240)}`;
+  const user = pick(GEN_USERS);
+  const pass = pick(["Str0ng", "S3cur3", "Depl0y", "Adm1n", "R00t3d"]) + "_" + hex(5) + "!";
+  const c = { name, id, ip, user, pass };
+  const access = genAccessBrick(pick(["ftp", "web", "cloud"]), c);
+  const priv = genPrivescBrick(pick(["less", "env", "perl"]), c);
+  const tag = id.replace(/-/g, "_");
+  const machine = {
+    id, name, ip, difficulty: pick(["Facile", "Moyen", "Difficile"]), os: "Linux (Debian 12)",
+    briefing: "Machine générée procéduralement (combinaison aléatoire de briques de vulnérabilités).",
+    ports: access.ports, web: access.web || {}, ftp: access.ftp || { enabled: false },
+    sshUsers: access.sshUsers,
+    targetFS: {
+      hostname: id, homeDir: `/home/${user}`,
+      users: { [user]: { home: `/home/${user}`, fs: { "user.txt": { type: "file", content: `FLAG{${tag}_user_${hex(4)}}`, perms: "-rw-r-----", owner: user } } } },
+      extraFS: {}, sudoL: priv.sudoL,
+    },
+    privesc: priv.privesc,
+    rootFile: { path: "/root/root.txt", content: `FLAG{${tag}_root_${hex(4)}}` },
+    hints: {
+      recon: [`Un scan s'impose : \`nmap ${ip}\`.`, "Regarde les services exposés pour trouver le vecteur d'accès.", "Le service le plus bavard est ta porte d'entrée."],
+      access: access.accessHints, privesc: priv.privescHints,
+    },
+  };
+  if (access.cloud) machine.cloud = access.cloud;
+  const walkthrough = [`nmap ${ip}`, ...access.walkAccess, "cat user.txt", "sudo -l", ...priv.walkPrivesc, "cat /root/root.txt"];
+  return { machine, seed, password: pass, walkthrough };
+}
+
+function cmdGenerate(args) {
+  const seed = args.join(" ").trim();
+  const gen = generateMachine(seed || undefined);
+  const res = loadCustomMachine(gen.machine);
+  if (!res.ok) return out("Échec de génération : " + res.errors.join(" ; "), "t-err");
+  SESSION.activeMachine = gen.machine.id;
+  return out(
+    `🎲 Machine générée : ${gen.machine.name} (${gen.machine.ip}, ${gen.machine.difficulty}) — seed « ${gen.seed} ».\n` +
+      `Déverrouillée et ajoutée au lab (bac à sable, non sauvegardée). Même seed = même machine : \`generate ${gen.seed}\`.\n` +
+      `Enchaîne avec \`use ${gen.machine.id}\` puis \`nmap ${gen.machine.ip}\`.`,
+    "t-ok",
+  );
+}
+
 // ── Dispatcher principal ─────────────────────────────────────────────────────
 function runCommand(raw) {
   const line = raw.trim();
@@ -1297,6 +1417,7 @@ function dispatch(cmd, args, rawFirst) {
     case "nano": return cmdVim(args);
     case "nc": return cmdNc(args);
     case "cloudctl": return cmdCloudctl(args);
+    case "generate": return cmdGenerate(args);
     default: {
       if (SESSION.ctx !== "attacker") {
         const machine = getMachine(SESSION.ctx);
@@ -1331,7 +1452,8 @@ function cmdHelp() {
     "Système (une fois connecté ou en local) : ls [-la], cd, pwd, cat, find, echo, vim <fichier>, whoami, id, sudo -l, sudo <cmd>, crontab -l, docker ps\n" +
     "Windows (machine cible Windows) : dir, type, net user, net localgroup administrators, schtasks /query, icacls <fichier>\n" +
     "Filtres en pipe : grep, wc -l, sort [-u], head, tail, cut, awk '{print $N}'\n" +
-    "Shell : variables $USER/$HOME/$PWD/$HOSTNAME/$UID/$? (${VAR} aussi), substitution $(commande), redirections > >> 2> &> 2>/dev/null"
+    "Shell : variables $USER/$HOME/$PWD/$HOSTNAME/$UID/$? (${VAR} aussi), substitution $(commande), redirections > >> 2> &> 2>/dev/null\n" +
+    "Bac à sable : generate [seed] (génère une machine aléatoire jouable), + éditeur de machines (bouton 🛠️)"
   );
 }
 

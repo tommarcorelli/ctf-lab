@@ -213,9 +213,15 @@ reverse shell manuel sur MERIDIAN, `validateMachines` en garde-fou de schéma) :
       privesc → flags), et exportable en `.json` à glisser dans `machines.js`. Testé dans
       `tests/run.js` (JSON invalide, schéma incomplet, collision d'id, chargement valide +
       exploitation complète) et vérifié au rendu (headless).
-- [ ] **Générateur procédural local** — un algorithme JS pur (pas d'IA externe) qui combine
-      aléatoirement des "briques" de vulnérabilités (service, faille d'accès, technique de
-      privesc) d'un pool prédéfini pour produire de nouvelles machines jouables à la volée
+- [x] **Générateur procédural local** — `generateMachine(seed)` (dans `engine.js`), 100% JS pur
+      (PRNG mulberry32 seedé, aucune IA), combine une **brique de vecteur d'accès** (FTP anonyme /
+      fuite de config web / bucket cloud public) et une **brique de privesc** (sudo GTFOBins
+      `less`/`env`/`perl`) tirées de pools pour produire une machine **valide et garantie jouable**
+      (chaque brique fournit aussi ses étapes de solution). Déterministe : même seed → même machine
+      (donc partageable/reproductible via le lien de partage). Exposé via la commande **`generate
+      [seed]`** (génère + charge + déverrouille) et le bouton **🎲 Générer** de l'éditeur. Testé dans
+      `tests/run.js` (déterminisme, conformité au schéma et exploitation complète sur 5 seeds, +
+      la commande).
 - [x] **Partage de scénario par URL** — une machine custom s'encode en **base64url** (UTF-8,
       100% ECMAScript, sans `btoa`, donc testable en Node) dans le hash de l'URL via
       `encodeScenario()`/`decodeScenario()` (dans `engine.js`). Le bouton **« Lien de partage »**
