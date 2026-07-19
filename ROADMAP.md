@@ -17,16 +17,14 @@ Vue synthétique de ce qui reste ouvert et vaudrait le coup d'être attaqué ens
 plus de ce qui vient d'être livré dans les dernières passes (`vim`, `nc` bannière + écoute,
 reverse shell manuel sur MERIDIAN, `validateMachines` en garde-fou de schéma) :
 
-1. **`vrai parser shell`** (Phase 3) — dette technique qui limite déjà certains scénarios
-   (pas de citations imbriquées, pas de `$(...)`) ; utile avant d'enrichir encore les
-   familles de vulnérabilités web. **Gros chantier, pas rapide.**
-2. **i18n FR/EN** (Phase 3) — gros chantier transverse, à faire une fois le contenu FR
-   stabilisé (sinon double la charge de maintenance à chaque nouvelle machine). **Pas rapide.**
+1. **i18n FR/EN** (Phase 3) — gros chantier transverse, à faire une fois le contenu FR
+   stabilisé (sinon double la charge de maintenance à chaque nouvelle machine). **Dernier
+   item de Phase 3 encore ouvert.**
 
 > ✅ **Phase 2 entièrement terminée** (STRATUS cloud / NEXUS webshell / CITADEL pivot, 8 → **11
-> machines**). En Phase 3 : **solveur automatique** (`tools/solve.js`) et **extraction JSON pure
-> des machines** (`tools/export-machines-json.js` → `machines.json`, regex balisées + round-trip)
-> livrés. Il ne reste en Phase 3 que les deux gros chantiers ci-dessus (parser shell, i18n).
+> machines**). **Phase 3 quasi bouclée** : solveur automatique (`tools/solve.js`), extraction
+> JSON pure des machines (`tools/export-machines-json.js` → `machines.json`) et **vrai parser
+> shell** (`$VAR`, `$(...)`, redirections `2>`/`&>`) livrés. Il ne reste que l'i18n FR/EN.
 
 ---
 
@@ -155,9 +153,18 @@ reverse shell manuel sur MERIDIAN, `validateMachines` en garde-fou de schéma) :
       `vim` (création/édition/`:q!`, alternative à `echo >>` pour le privesc cron), bannière
       `nc`, cloud (`cloudctl`), upload de webshell et pivot `ssh -L`. 167 assertions au total. Lancer avec `node tests/run.js`. A déjà détecté plusieurs
       erreurs de séquence de commandes pendant son écriture — utile.
-- [ ] **Vrai parser shell** — gestion propre des guillemets imbriqués, variables `$VAR`,
-      substitution de commande `$(...)`, redirections multiples (`2>`, `&>`) — le parseur
-      actuel est volontairement simplifié
+- [x] **Vrai parser shell** — nouveau lexer/parser dans `engine.js` (`parseWords` +
+      `runPipelineCore`) : guillemets simples/doubles imbriqués et concaténés, **variables**
+      intégrées `$USER`/`$HOME`/`$PWD`/`$HOSTNAME`/`$UID`/`$?` et `${VAR}` (développées hors
+      guillemets simples, variable inconnue = ""), **substitution de commande** `$(...)`
+      (récursive, sans effet de bord d'historique/scan de flag), et **redirections** `>` `>>`
+      `2>` `&>` `2>&1` `2>/dev/null` gérées de façon centralisée (`splitRedirects` +
+      `applyRedirects`), la logique d'écriture fichier d'`echo` (avec le plant cron/schtask)
+      étant factorisée dans `writeStdoutToFile`. Le découpage des pipes respecte guillemets et
+      `$(...)`. *Choix assumé* : les backslash restent littéraux (pas d'échappement bash) car les
+      chemins Windows des machines cibles (`C:\Scripts\...`) en dépendent, et les variables sont
+      en lecture seule (`export` est déjà une commande du jeu). Les 167 tests + le solveur passent
+      inchangés (aucune régression sur les chemins d'exploit).
 - [x] **Versioning de la sauvegarde** — `SAVE_VERSION` explicite + `sanitizeGameState()` centralise
       toutes les migrations (badges, bestTimes, jeopardy, insaneMode...) et normalise n'importe
       quel objet GAME partiel/étranger vers un état sûr. Réutilisé à la fois par le chargement

@@ -121,6 +121,18 @@ Pipes : `grep`, `wc -l`, `sort [-u]`, `head`, `tail`, `cut`, `awk '{print $N}'`
 Méta : `machines`, `use <nom>`, `reset <nom>`, `hint`, `insane [on|off]`, `progress`, `badges`, `records`, `writeup <nom> [--download]`, `export <passphrase>`, `import`, `score`, `help`, `clear`, `exit`
 Jeopardy : `challenges`, `challenge <id>`, `chint <id>`, `submit <id> <flag>`, `hashcat <hash>`, `daily`
 
+## Shell (parser)
+
+Le terminal dispose d'un vrai petit parser (dans `js/engine.js`) : guillemets simples/doubles
+imbriqués et concaténés, **variables** intégrées `$USER`, `$HOME`, `$PWD`, `$HOSTNAME`, `$UID`,
+`$?` (et la forme `${VAR}`) développées hors guillemets simples, **substitution de commande**
+`$(...)`, et **redirections** `>`, `>>`, `2>`, `&>`, `2>&1`, `2>/dev/null`. Exemples :
+`echo "connecté en tant que $USER"`, `cat $(echo user.txt)`, `find / -perm -4000 2>/dev/null`.
+
+Deux choix assumés : les backslash restent **littéraux** (pas d'échappement bash) pour que les
+chemins Windows des machines cibles (`C:\Scripts\backup.bat`) fonctionnent, et les variables sont
+en **lecture seule** (`export` est déjà la commande de sauvegarde chiffrée, pas une assignation).
+
 ## Ajouter une machine
 
 Ajoute un objet dans `MACHINES` (`js/machines.js`) avec le même schéma que les machines

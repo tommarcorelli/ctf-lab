@@ -338,6 +338,175 @@ function tokenize(s) {
   return out;
 }
 
+// ── Vrai parser shell (quotes imbriquées, $VAR, $(...), redirections) ─────────
+// NB : les backslash restent volontairement littéraux (les chemins Windows type
+// C:\Scripts\backup.bat des machines cibles en dépendent) — pas d'échappement bash.
+
+// Variables intégrées en lecture seule (pas de variables définies par l'utilisateur :
+// `export` est déjà une commande du jeu). Une variable inconnue vaut "" comme en bash.
+function shellVarValue(name) {
+  switch (name) {
+    case "?": return String(SESSION.lastExitCode);
+    case "USER": case "LOGNAME": return SESSION.user;
+    case "HOME": return SESSION.home;
+    case "PWD": return isWinCtx() ? winPath(SESSION.cwd) : SESSION.cwd;
+    case "HOSTNAME": return SESSION.host;
+    case "UID": return SESSION.user === "root" ? "0" : "1000";
+    case "SHELL": return "/bin/bash";
+    default: return "";
+  }
+}
+
+// Développe un `$...` à la position i (raw[i] === "$"). Retourne [texte, index_suivant].
+function expandDollar(raw, i) {
+  if (raw[i + 1] === "(") { // substitution de commande $(...)
+    let depth = 1, j = i + 2;
+    for (; j < raw.length && depth > 0; j++) {
+      if (raw[j] === "(") depth++;
+      else if (raw[j] === ")") { depth--; if (depth === 0) break; }
+    }
+    const inner = raw.slice(i + 2, j);
+    const r = runPipelineCore(inner.trim());
+    const outp = (r && typeof r.text === "string" ? r.text : "").replace(/\n+$/, "").replace(/\n/g, " ");
+    return [outp, j + 1];
+  }
+  if (raw[i + 1] === "{") { // ${VAR}
+    let j = i + 2, name = "";
+    while (j < raw.length && raw[j] !== "}") { name += raw[j]; j++; }
+    return [shellVarValue(name), j + 1];
+  }
+  if (raw[i + 1] === "?") return [shellVarValue("?"), i + 2];
+  let j = i + 1, name = "";
+  while (j < raw.length && /[A-Za-z0-9_]/.test(raw[j])) { name += raw[j]; j++; }
+  if (!name) return ["$", i + 1]; // un $ isolé reste littéral
+  return [shellVarValue(name), j];
+}
+
+// Découpe un segment en mots, en gérant guillemets simples/doubles (imbriqués),
+// concaténation adjacente, et expansion $VAR/$(...) hors guillemets simples.
+// Retourne [{ value, quoted }] — `quoted` sert à ne pas prendre un `>` entre
+// guillemets pour un opérateur de redirection.
+function parseWords(raw) {
+  const words = [];
+  let cur = "", started = false, quoted = false, i = 0;
+  const push = () => { if (started) { words.push({ value: cur, quoted }); } cur = ""; started = false; quoted = false; };
+  while (i < raw.length) {
+    const ch = raw[i];
+    if (ch === "'") { started = true; quoted = true; i++; while (i < raw.length && raw[i] !== "'") { cur += raw[i]; i++; } i++; continue; }
+    if (ch === '"') {
+      started = true; quoted = true; i++;
+      while (i < raw.length && raw[i] !== '"') {
+        if (raw[i] === "$") { const [v, ni] = expandDollar(raw, i); cur += v; i = ni; }
+        else { cur += raw[i]; i++; }
+      }
+      i++; continue;
+    }
+    if (/\s/.test(ch)) { push(); i++; continue; }
+    if (ch === "$") { started = true; const [v, ni] = expandDollar(raw, i); cur += v; i = ni; continue; }
+    started = true; cur += ch; i++;
+  }
+  push();
+  return words;
+}
+
+// Sépare argv réel et redirections (>, >>, 2>, &>, 2>&1) à partir des mots.
+function splitRedirects(words) {
+  const argv = [], redirects = [];
+  for (let k = 0; k < words.length; k++) {
+    const w = words[k];
+    if (!w.quoted) {
+      if (w.value === "2>&1") { redirects.push({ fd: "merge" }); continue; }
+      const m = w.value.match(/^(2>>|2>|&>>|&>|1>>|1>|>>|>)(.*)$/);
+      if (m) {
+        const op = m[1];
+        let target = m[2];
+        if (!target) { const nx = words[k + 1]; if (nx) { target = nx.value; k++; } }
+        redirects.push({ fd: op[0] === "2" ? 2 : op[0] === "&" ? "both" : 1, target, append: op.includes(">>") });
+        continue;
+      }
+    }
+    argv.push(w.value);
+  }
+  return { argv, redirects };
+}
+
+// Écrit `text` dans un fichier (sémantique partagée par echo et les redirections).
+// Préserve exactement l'ancien comportement de cmdEcho (plant cron/schtask, permissions).
+function writeStdoutToFile(targetArg, text, append) {
+  if (targetArg === "/dev/null") return out("");
+  const p = resolvePath(targetArg, SESSION.cwd, SESSION.home);
+  const node = SESSION.fs[p];
+  if (SESSION.ctx !== "attacker") {
+    const machine = getMachine(SESSION.ctx);
+    if ((machine.privesc.type === "cron-writable" || machine.privesc.type === "schtask-writable") && p === machine.privesc.scriptPath) {
+      if (!node) return out(`bash: ${targetArg}: Fichier introuvable`, "t-err");
+      node.content += "\n" + text;
+      checkAndPlant(machine, p);
+      return out("");
+    }
+  }
+  if (!node) return out(`bash: ${targetArg}: Fichier introuvable`, "t-err");
+  if (!canWrite(node, node.owner === SESSION.user)) return out(`bash: ${targetArg}: Permission refusée`, "t-err");
+  node.content = append ? (node.content || "") + "\n" + text : text;
+  return out("");
+}
+
+// Applique les redirections au résultat d'une commande. Modèle simplifié à un seul
+// flux : `2>` n'agit que sur une sortie d'erreur (t-err), `&>` sur tout, `2>&1` no-op.
+function applyRedirects(result, redirects) {
+  for (const r of redirects) {
+    if (r.fd === "merge") continue;
+    const isErr = result.cls === "t-err";
+    if (r.fd === 2) {
+      if (isErr) result = r.target === "/dev/null" ? out("") : (writeStdoutToFile(r.target, result.text, r.append), out(""));
+    } else if (r.fd === "both") {
+      result = r.target === "/dev/null" ? out("") : (writeStdoutToFile(r.target, result.text, r.append), out(""));
+    } else {
+      result = writeStdoutToFile(r.target, result.text, r.append);
+    }
+  }
+  return result;
+}
+
+// Découpe une ligne en segments de pipe, en respectant guillemets et $(...).
+function splitPipeline(line) {
+  const parts = [];
+  let cur = "", q = null, depth = 0;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (q) { cur += ch; if (ch === q) q = null; continue; }
+    if (ch === "'" || ch === '"') { q = ch; cur += ch; continue; }
+    if (ch === "$" && line[i + 1] === "(") { depth++; cur += ch; continue; }
+    if (ch === ")" && depth > 0) { depth--; cur += ch; continue; }
+    if (ch === "|" && depth === 0) { parts.push(cur); cur = ""; continue; }
+    cur += ch;
+  }
+  parts.push(cur);
+  return parts.map((s) => s.trim());
+}
+
+// Cœur d'exécution d'une ligne (sans effets de bord d'historique / scan de flags) :
+// expansion + tokenisation + pipes + redirections. Réutilisé par la substitution $(...).
+function runPipelineCore(line) {
+  const segments = splitPipeline(line);
+  const lastIdx = segments.length - 1;
+  const lastSplit = splitRedirects(parseWords(segments[lastIdx]));
+  const firstSplit = lastIdx === 0 ? lastSplit : splitRedirects(parseWords(segments[0]));
+  const argv = firstSplit.argv;
+  const cmd = argv[0];
+  const args = argv.slice(1);
+  // rawFirst = segment brut (non développé) pour les commandes qui matchent l'exploit
+  // à la chaîne exacte (sudo/find/docker/bash) — comportement inchangé.
+  let result = dispatch(cmd, args, segments[0]);
+  if (result && segments.length > 1) {
+    let text = result.text;
+    for (let i = 1; i < segments.length; i++) text = applyFilter(text, segments[i]);
+    result = out(text, result.cls);
+  }
+  if (result && lastSplit.redirects.length) result = applyRedirects(result, lastSplit.redirects);
+  return result;
+}
+
 // ── Autocomplétion (Tab) ─────────────────────────────────────────────────────
 const KNOWN_COMMANDS = [
   "help", "clear", "machines", "use", "reset", "hint", "insane", "progress", "badges", "records", "writeup",
@@ -938,18 +1107,7 @@ function runCommand(raw) {
     cronTickPrefix = machine.privesc.tickMsg + "\n\n";
   }
 
-  const pipeline = line.split(/(?<!\\)\|/).map((s) => s.trim());
-  const first = pipeline[0];
-  const tokens = tokenize(first);
-  const cmd = tokens[0];
-  const args = tokens.slice(1);
-
-  let result = dispatch(cmd, args, first);
-  if (result && pipeline.length > 1) {
-    let text = result.text;
-    for (let i = 1; i < pipeline.length; i++) text = applyFilter(text, pipeline[i]);
-    result = out(text, result.cls);
-  }
+  let result = runPipelineCore(line);
   if (result && SESSION.ctx !== "attacker") {
     scanForFlags(getMachine(SESSION.ctx), result.text);
   }
@@ -1078,7 +1236,8 @@ function cmdHelp() {
     "Accès : ssh <user>@<ip> [-p <port>], curl -F \"file=@<webshell>\" <url> (upload), ssh -L <lport>:<hôte_interne>:<port> <user>@<pivot> (tunnel/pivot)\n" +
     "Système (une fois connecté ou en local) : ls [-la], cd, pwd, cat, find, echo, vim <fichier>, whoami, id, sudo -l, sudo <cmd>, crontab -l, docker ps\n" +
     "Windows (machine cible Windows) : dir, type, net user, net localgroup administrators, schtasks /query, icacls <fichier>\n" +
-    "Filtres en pipe : grep, wc -l, sort [-u], head, tail, cut, awk '{print $N}'"
+    "Filtres en pipe : grep, wc -l, sort [-u], head, tail, cut, awk '{print $N}'\n" +
+    "Shell : variables $USER/$HOME/$PWD/$HOSTNAME/$UID/$? (${VAR} aussi), substitution $(commande), redirections > >> 2> &> 2>/dev/null"
   );
 }
 
@@ -1513,34 +1672,11 @@ function handleVimInput(line) {
   v.lines.push(line);
   return out("");
 }
-function cmdEcho(args, rawFirst) {
-  if (/\$\?/.test(rawFirst)) {
-    rawFirst = rawFirst.replace(/\$\?/g, String(SESSION.lastExitCode));
-    args = tokenize(rawFirst).slice(1);
-  }
-  const appendMatch = rawFirst.match(/>>\s*(\S+)$/);
-  const overMatch = !appendMatch && rawFirst.match(/(?<!>)>\s*(\S+)$/);
-  if (appendMatch || overMatch) {
-    const targetArg = (appendMatch || overMatch)[1];
-    const p = resolvePath(targetArg, SESSION.cwd, SESSION.home);
-    const node = SESSION.fs[p];
-    const payload = rawFirst.slice(0, rawFirst.indexOf(appendMatch ? ">>" : ">")).trim().replace(/^echo\s+/, "").replace(/^['"]|['"]$/g, "");
-
-    if (SESSION.ctx !== "attacker") {
-      const machine = getMachine(SESSION.ctx);
-      if ((machine.privesc.type === "cron-writable" || machine.privesc.type === "schtask-writable") && p === machine.privesc.scriptPath) {
-        if (!node) return out(`bash: ${targetArg}: Fichier introuvable`, "t-err");
-        node.content += "\n" + payload;
-        checkAndPlant(machine, p);
-        return out("");
-      }
-    }
-    if (!node) return out(`bash: ${targetArg}: Fichier introuvable`, "t-err");
-    if (!canWrite(node, node.owner === SESSION.user)) return out(`bash: ${targetArg}: Permission refusée`, "t-err");
-    node.content = appendMatch ? (node.content || "") + "\n" + payload : payload;
-    return out("");
-  }
-  return out(args.join(" ").replace(/^['"]|['"]$/g, ""));
+// Les guillemets, l'expansion ($VAR/$?/$(...)) et les redirections (>, >>) sont
+// désormais gérés en amont par le parser (parseWords + applyRedirects) : echo se
+// contente d'afficher ses arguments déjà développés.
+function cmdEcho(args) {
+  return out(args.join(" "));
 }
 
 function cmdNmap(args) {

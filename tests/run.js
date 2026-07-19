@@ -611,6 +611,47 @@ section("Pivot multi-hop : hôte interne via tunnel ssh -L (CITADEL)", () => {
   assert(/FLAG\{citadel_root/.test(flag.text), "flag root CITADEL capturé après pivot + privesc");
 });
 
+// ── 15. Parser shell : variables, substitution, redirections ─────────────────
+section("Parser shell : $VAR, $(...), redirections", () => {
+  const ctx = freshContext();
+  unlockAll(ctx);
+
+  // Variables intégrées
+  assertEqual(run(ctx, "echo $USER").text, "kali", "$USER développé");
+  assertEqual(run(ctx, "echo $HOME/x").text, "/home/kali/x", "$VAR concaténé à du texte");
+  assertEqual(run(ctx, "echo ${USER}_end").text, "kali_end", "${VAR} développé");
+  assertEqual(run(ctx, "echo $INCONNU-fin").text, "-fin", "variable inconnue -> chaîne vide");
+
+  // Guillemets : simples littéraux, doubles expansés
+  assertEqual(run(ctx, "echo '$USER'").text, "$USER", "guillemets simples : pas d'expansion");
+  assertEqual(run(ctx, 'echo "salut $USER"').text, "salut kali", "guillemets doubles : expansion");
+
+  // $? reflète le code de sortie précédent
+  run(ctx, "commande_qui_nexiste_pas");
+  assertEqual(run(ctx, "echo $?").text, "1", "$? = 1 après une erreur");
+  run(ctx, "echo ok");
+  assertEqual(run(ctx, "echo $?").text, "0", "$? = 0 après un succès");
+
+  // Substitution de commande $(...)
+  assertEqual(run(ctx, "echo [$(whoami)]").text, "[kali]", "substitution $(whoami)");
+  assertEqual(run(ctx, "echo $(echo imbrique)").text, "imbrique", "substitution imbriquée");
+
+  // Redirection stderr : 2>/dev/null supprime la sortie d'erreur
+  const suppressed = run(ctx, "nmap 9.9.9.9 2>/dev/null");
+  assertEqual(suppressed.text, "", "2>/dev/null supprime le message d'erreur");
+  assert(suppressed.cls !== "t-err", "2>/dev/null neutralise aussi la classe d'erreur");
+  // &>/dev/null supprime tout
+  assertEqual(run(ctx, "echo visible &>/dev/null").text, "", "&>/dev/null supprime toute la sortie");
+
+  // Un $ dans un pipe (awk) ne doit pas être confondu avec une variable shell
+  assertEqual(run(ctx, "echo 'a b c' | awk '{print $2}'").text, "b", "$2 d'awk préservé dans un pipe");
+
+  // Substitution utilisée comme argument d'une vraie commande
+  run(ctx, "use nimbus"); run(ctx, "nmap 10.10.11.21"); run(ctx, "ftp 10.10.11.21");
+  run(ctx, "ssh jsmith@10.10.11.21"); pass(ctx, "N1mbus_B4ckup!2024");
+  assert(/FLAG\{nimbus_acces_initial/.test(run(ctx, "cat $(echo user.txt)").text), "cat $(echo user.txt) lit bien le flag");
+});
+
 // ── Rapport final ─────────────────────────────────────────────────────────────
 Promise.all(pendingAsync).then(() => {
   console.log(`\n${"─".repeat(60)}`);
