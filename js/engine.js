@@ -597,7 +597,7 @@ const KNOWN_COMMANDS = [
   "dir", "type", "net", "schtasks", "icacls", "vim", "nc", "arp", "cloudctl", "generate", "replay", "sandbox",
   "blueteam", "incident", "answer", "bthint", "firewall", "iptables",
   "phishing", "inbox", "mail", "report", "phhint",
-  "malware", "re", "strings", "disas", "disasm", "resolve", "rehint", "graph", "stack",
+  "malware", "re", "strings", "disas", "disasm", "resolve", "rehint", "graph", "stack", "skills", "whois",
 ];
 const PATH_COMMANDS = ["cd", "ls", "cat", "find", "dir", "type", "icacls", "vim"];
 
@@ -759,6 +759,67 @@ function levelInfo(score) {
   const level = Math.floor(score / XP_PER_LEVEL) + 1;
   const into = score % XP_PER_LEVEL;
   return { level, into, span: XP_PER_LEVEL, pct: Math.round((into / XP_PER_LEVEL) * 100) };
+}
+
+// ── Arbre de compétences / rangs (RPG) ───────────────────────────────────────
+const RANKS = [
+  { lvl: 1, title: "Débutant" }, { lvl: 2, title: "Script Kiddie" }, { lvl: 3, title: "Analyste junior" },
+  { lvl: 5, title: "Pentester" }, { lvl: 8, title: "Red Teamer" }, { lvl: 12, title: "Opérateur élite" },
+];
+function rankTitle(level) { let t = RANKS[0].title; for (const r of RANKS) if (level >= r.lvl) t = r.title; return t; }
+// Commandes avancées débloquées par palier de niveau (uniquement des bonus optionnels :
+// aucune commande nécessaire à une machine n'est verrouillée).
+const SKILL_UNLOCKS = [
+  { lvl: 2, cmd: "whois", desc: "whois <ip> — fiche réseau enrichie (recon avancée)" },
+  { lvl: 3, cmd: "graph", desc: "graph — graphe d'attaque annoté" },
+  { lvl: 5, cmd: "generate", desc: "generate — générateur de machines procédurales" },
+];
+function commandUnlocked(cmd) {
+  const u = SKILL_UNLOCKS.find((x) => x.cmd === cmd);
+  if (!u) return true;
+  return levelInfo(GAME.score).level >= u.lvl;
+}
+function skillStats() {
+  const ms = MACHINES.filter((m) => !m.custom);
+  let recon = 0, expl = 0, priv = 0;
+  ms.forEach((m) => { const p = GAME.progress[m.id]; if (p.recon) recon++; if (p.access) expl++; if (p.privesc) priv++; });
+  const cnt = (o) => Object.values(o || {}).filter(Boolean).length;
+  const forensic = cnt(GAME.blueteam.solved) + cnt(GAME.phishing.solved) + cnt(GAME.reverse.solved) + (GAME.stackpwn.solved ? 1 : 0);
+  return { recon, expl, priv, forensic, total: ms.length };
+}
+function cmdSkills() {
+  const info = levelInfo(GAME.score);
+  const s = skillStats();
+  const bar = (n, max) => { const k = Math.max(0, Math.min(10, Math.round((n / Math.max(1, max)) * 10))); return "█".repeat(k) + "░".repeat(10 - k); };
+  const lines = [
+    `🎖️  Rang : ${rankTitle(info.level)} — Niveau ${info.level} (${info.into}/${info.span} XP)`,
+    "",
+    "Compétences :",
+    `  Reconnaissance   ${bar(s.recon, s.total)}  ${s.recon}/${s.total} machines scannées`,
+    `  Exploitation     ${bar(s.expl, s.total)}  ${s.expl}/${s.total} accès obtenus`,
+    `  Élévation priv.  ${bar(s.priv, s.total)}  ${s.priv}/${s.total} privesc réussies`,
+    `  Forensic/Défense ${bar(s.forensic, 8)}  ${s.forensic} défis d'analyse résolus`,
+    "",
+    "Déblocages par palier :",
+  ];
+  SKILL_UNLOCKS.forEach((u) => lines.push(`  ${info.level >= u.lvl ? "✅" : "🔒"} niv.${u.lvl} — ${u.desc}`));
+  lines.push("");
+  lines.push("Gagne de l'XP (score) pour monter en rang et débloquer des commandes avancées.");
+  return out(lines.join("\n"));
+}
+function cmdWhois(args) {
+  if (!commandUnlocked("whois")) return out("🔒 `whois` est une commande avancée — atteins le niveau 2 (tape `skills`).", "t-err");
+  const ip = (args.find((a) => /^\d+\.\d+\.\d+\.\d+$/.test(a)) || "").trim();
+  if (!ip) return out("usage: whois <ip>", "t-err");
+  const m = MACHINES.find((mm) => mm.ip === ip);
+  const octet = parseInt(ip.split(".").pop(), 10) || 0;
+  return out(
+    `Whois ${ip}\n` +
+      `  netname   : ${m ? m.name + "-NET" : "UNKNOWN-NET"}\n` +
+      `  descr     : ${m ? m.os : "hôte inconnu"}\n` +
+      `  origin-as : AS${64500 + (octet % 500)}\n` +
+      `  status    : ${m ? (GAME.progress[m.id] && GAME.progress[m.id].rootFlag ? "compromis" : "cible connue") : "non répertorié"}`,
+  );
 }
 
 // ── Badges / succès ──────────────────────────────────────────────────────────
@@ -2137,8 +2198,10 @@ function dispatch(cmd, args, rawFirst) {
     case "daily": return cmdDaily();
     case "score": {
       const info = levelInfo(GAME.score);
-      return out(`Score total : ${GAME.score} pts — Niveau ${info.level} (${info.into}/${info.span} XP, ${info.pct}%)`);
+      return out(`Score total : ${GAME.score} pts — ${rankTitle(info.level)}, niveau ${info.level} (${info.into}/${info.span} XP, ${info.pct}%). Tape \`skills\` pour l'arbre de compétences.`);
     }
+    case "skills": return cmdSkills();
+    case "whois": return cmdWhois(args);
     case "history": return out(SESSION.history.slice(0, -1).join("\n"));
     case "whoami": {
       if (isWinCtx()) {
@@ -2243,7 +2306,8 @@ function cmdHelp() {
     "Filtres en pipe : grep, wc -l, sort [-u], head, tail, cut, awk '{print $N}'\n" +
     "Shell : variables $USER/$HOME/$PWD/$HOSTNAME/$UID/$? (${VAR} aussi), substitution $(commande), redirections > >> 2> &> 2>/dev/null\n" +
     "Bac à sable : generate [seed] (machine aléatoire jouable), sandbox (FS libre pour s'entraîner, bouton 🧪), éditeur de machines (🛠️), replay (rejoue ta session, ▶️)\n" +
-    "Visualisation : graph [machine] (graphe d'attaque, bouton 🗺️), stack (défi buffer overflow schématisé, bouton 🧠)"
+    "Visualisation : graph [machine] (graphe d'attaque, bouton 🗺️), stack (défi buffer overflow schématisé, bouton 🧠)\n" +
+    "Progression : score, skills (arbre de compétences / rang), whois <ip> (recon avancée, niv.2+)"
   );
 }
 

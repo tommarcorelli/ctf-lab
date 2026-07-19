@@ -1106,6 +1106,21 @@ section("Buffer overflow simulé : stackEval / attemptStack / SVG", () => {
   assert(!/hijack/.test(svg0) && !/sk-slot fill/.test(svg0), "sans payload, aucune zone n'est allumée");
 });
 
+// ── 27. Arbre de compétences / rangs (RPG) ───────────────────────────────────
+section("Arbre de compétences : skills, rangs, déblocage par palier", () => {
+  const ctx = freshContext();
+  // Rang selon le niveau (500 XP/niveau)
+  assertEqual(get(ctx, "rankTitle(1)"), "Débutant", "niveau 1 -> Débutant");
+  assertEqual(get(ctx, "rankTitle(5)"), "Pentester", "niveau 5 -> Pentester");
+  assert(/Rang/.test(run(ctx, "skills").text), "`skills` affiche le rang et les compétences");
+
+  // Commande avancée verrouillée au niveau 1, débloquée en montant en XP
+  assert(run(ctx, "whois 10.10.11.21").cls === "t-err", "whois verrouillé au niveau 1");
+  get(ctx, "GAME.score = 600;"); // niveau 2
+  assert(get(ctx, "commandUnlocked('whois')"), "whois débloqué au niveau 2");
+  assert(/netname/.test(run(ctx, "whois 10.10.11.21").text), "whois fournit une fiche réseau une fois débloqué");
+});
+
 // ── Rapport final ─────────────────────────────────────────────────────────────
 Promise.all(pendingAsync).then(() => {
   console.log(`\n${"─".repeat(60)}`);

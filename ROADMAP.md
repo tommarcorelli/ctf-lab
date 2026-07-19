@@ -295,11 +295,14 @@ reverse shell manuel sur MERIDIAN, `validateMachines` en garde-fou de schéma) :
 - [x] **Casseur de hash simulé** — commande `hashcat <hash>` / `hashcat --list` en JS pur, contre
       une wordlist embarquée. Utilise un algorithme maison fictif ("hash-VX", pas un vrai MD5/SHA1)
       pour rester clairement pédagogique — intégré au défi Jeopardy "Mot de passe recyclé"
-- [ ] **Arbre de compétences façon RPG** — XP gagnée par machine/catégorie (recon, exploitation,
-      privesc, forensic) qui débloque progressivement des commandes ou options avancées
-      (ex: `nmap -sV`, `awk` avancé) plutôt que tout disponible dès le début.
-      *Première brique posée* : le score se traduit déjà en niveau/barre XP dans l'en-tête
-      (`levelInfo()` dans `engine.js`) — il manque encore le déblocage de commandes par palier.
+- [x] **Arbre de compétences façon RPG** — commande **`skills`** : rang (`RANKS` : Débutant →
+      Script Kiddie → … → Opérateur élite selon le niveau), barres de compétences par catégorie
+      (recon / exploitation / privesc / forensic, dérivées de `GAME.progress` + défis d'analyse), et
+      **déblocage de commandes par palier** (`SKILL_UNLOCKS` : `whois` au niv.2, `graph` au niv.3,
+      `generate` au niv.5). Seules des commandes **bonus** sont verrouillées (`commandUnlocked`) —
+      aucune commande nécessaire à une machine n'est gatée, pour ne pas casser l'ouverture du jeu.
+      Le rang apparaît aussi dans `score`. Testé dans `tests/run.js` (rangs, `whois` verrouillé au
+      niv.1 puis débloqué au niv.2).
 - [x] **Mini reverse engineering** — 2 échantillons (`MALWARE_SAMPLES`, tout en dur) : un dropper/C2
       (`update.bin`) et un vérificateur de licence (`license.bin`). `strings <id>` dump les chaînes
       lisibles (domaine C2, clé, mutex…), `disas <id>` affiche un **désassemblage x86 simplifié**
