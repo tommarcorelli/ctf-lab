@@ -1128,6 +1128,54 @@ function loadCustomMachine(input) {
   return { ok: true, errors: [], machine };
 }
 
+// ── Partage de scénario par URL (base64url d'une machine, zéro dépendance) ───
+// Encodage 100% ECMAScript (pas de btoa/TextEncoder) pour marcher partout, y compris
+// dans le contexte de test Node.
+const B64URL = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+function utf8ToBytes(str) {
+  const s = unescape(encodeURIComponent(str));
+  const b = [];
+  for (let i = 0; i < s.length; i++) b.push(s.charCodeAt(i));
+  return b;
+}
+function bytesToUtf8(bytes) {
+  let s = "";
+  for (const b of bytes) s += String.fromCharCode(b);
+  return decodeURIComponent(escape(s));
+}
+function bytesToB64url(bytes) {
+  let out = "";
+  for (let i = 0; i < bytes.length; i += 3) {
+    const b0 = bytes[i], b1 = bytes[i + 1], b2 = bytes[i + 2];
+    out += B64URL[b0 >> 2];
+    out += B64URL[((b0 & 3) << 4) | ((b1 || 0) >> 4)];
+    if (i + 1 < bytes.length) out += B64URL[((b1 & 15) << 2) | ((b2 || 0) >> 6)];
+    if (i + 2 < bytes.length) out += B64URL[b2 & 63];
+  }
+  return out;
+}
+function b64urlToBytes(str) {
+  const rev = {};
+  for (let i = 0; i < B64URL.length; i++) rev[B64URL[i]] = i;
+  const bytes = [];
+  for (let i = 0; i < str.length; i += 4) {
+    const c0 = rev[str[i]], c1 = rev[str[i + 1]], c2 = rev[str[i + 2]], c3 = rev[str[i + 3]];
+    bytes.push((c0 << 2) | (c1 >> 4));
+    if (str[i + 2] !== undefined && c2 !== undefined) bytes.push(((c1 & 15) << 4) | (c2 >> 2));
+    if (str[i + 3] !== undefined && c3 !== undefined) bytes.push(((c2 & 3) << 6) | c3);
+  }
+  return bytes;
+}
+// Encode une machine (objet ou JSON) en chaîne base64url pour un lien de partage.
+function encodeScenario(input) {
+  const json = typeof input === "string" ? input : JSON.stringify(input);
+  return bytesToB64url(utf8ToBytes(json));
+}
+// Décode une chaîne de partage vers le JSON d'origine (lève si corrompue).
+function decodeScenario(str) {
+  return bytesToUtf8(b64urlToBytes(str));
+}
+
 // ── Dispatcher principal ─────────────────────────────────────────────────────
 function runCommand(raw) {
   const line = raw.trim();

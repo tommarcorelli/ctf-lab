@@ -755,6 +755,58 @@ section("Éditeur de machines : loadCustomMachine", () => {
   assert(get(ctx, "MACHINES.some(m=>m.custom)"), "la machine custom est bien marquée custom");
 });
 
+// ── 17. Partage de scénario par URL : encode/decode + chargement ─────────────
+section("Partage par URL : encodeScenario / decodeScenario", () => {
+  const ctx = freshContext();
+
+  // Round-trip sur du texte avec accents et caractères spéciaux (UTF-8)
+  const sample = 'Contrôle d\'accès "élevé" — €, \\ et / inclus';
+  const rt = get(ctx, `decodeScenario(encodeScenario(${JSON.stringify(sample)}))`);
+  assertEqual(rt, sample, "round-trip encode/decode préserve un texte UTF-8");
+
+  // base64url : pas de +, /, ni = dans la sortie
+  const enc = get(ctx, `encodeScenario(${JSON.stringify(sample)})`);
+  assert(/^[A-Za-z0-9_-]+$/.test(enc), "l'encodage est bien en base64url (URL-safe)");
+
+  // Une machine encodée -> décodée -> chargée -> jouable
+  const tpl = {
+    id: "shared1", name: "SHARED1", ip: "10.99.0.9", difficulty: "Facile",
+    os: "Linux", briefing: "Machine partagée par lien.",
+    ports: [{ port: 22, proto: "tcp", state: "open", service: "ssh", version: "OpenSSH 9.2p1" }],
+    web: {}, ftp: { enabled: false },
+    sshUsers: { guest: { password: "pw" } },
+    targetFS: {
+      hostname: "shared1", homeDir: "/home/guest",
+      users: { guest: { home: "/home/guest", fs: {
+        "user.txt": { type: "file", content: "FLAG{shared1_user}", perms: "-rw-r-----", owner: "guest" },
+      } } },
+      extraFS: {}, sudoL: "(root) NOPASSWD: /usr/bin/less",
+    },
+    privesc: {
+      type: "sudo-gtfobins",
+      exploitCmdRegex: "^sudo\\s+(/usr/bin/)?less\\s+/etc/hostname$",
+      pagerEscapeRegex: "^!/?(bin/)?sh$|^!bash$",
+      enterMsg: "(pager root)",
+    },
+    rootFile: { path: "/root/root.txt", content: "FLAG{shared1_root}" },
+    hints: { recon: ["nmap"], access: ["ssh"], privesc: ["less puis !sh"] },
+  };
+  const json = JSON.stringify(tpl);
+  const token = get(ctx, `encodeScenario(${JSON.stringify(json)})`);
+  const decoded = get(ctx, `decodeScenario(${JSON.stringify(token)})`);
+  const res = get(ctx, `loadCustomMachine(${JSON.stringify(decoded)})`);
+  assert(res.ok, "la machine décodée depuis le lien se charge (" + JSON.stringify(res.errors) + ")");
+
+  run(ctx, "use shared1"); run(ctx, "nmap 10.99.0.9");
+  run(ctx, "ssh guest@10.99.0.9"); pass(ctx, "pw");
+  run(ctx, "sudo less /etc/hostname"); run(ctx, "!sh");
+  assert(/FLAG\{shared1_root\}/.test(run(ctx, "cat /root/root.txt").text), "la machine partagée est jouable jusqu'au flag root");
+
+  // Un token corrompu ne fait pas planter le décodage en JSON valide
+  const corrupt = get(ctx, `(function(){ try { JSON.parse(decodeScenario("!!!pas-du-base64!!!")); return "parsed"; } catch(e){ return "threw"; } })()`);
+  assertEqual(corrupt, "threw", "un token corrompu ne produit pas un JSON valide (erreur gérée en amont)");
+});
+
 // ── Rapport final ─────────────────────────────────────────────────────────────
 Promise.all(pendingAsync).then(() => {
   console.log(`\n${"─".repeat(60)}`);

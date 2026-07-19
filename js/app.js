@@ -333,6 +333,43 @@ function downloadFromEditor() {
   try { id = (JSON.parse(json).id || "machine").replace(/[^a-z0-9_-]/gi, "") || "machine"; } catch (e) {}
   downloadText(`${id}.json`, json, "application/json");
 }
+function shareEditorLink() {
+  const json = editorEl("editor-json").value;
+  try { JSON.parse(json); } catch (e) {
+    setEditorMsg("❌ JSON invalide : " + escapeHtml(e.message), "err");
+    return;
+  }
+  const link = location.origin + location.pathname + "#machine=" + encodeScenario(json);
+  const show = () => setEditorMsg(
+    "🔗 Lien de partage (charge la machine à l'ouverture) :<br><code style='word-break:break-all'>" + escapeHtml(link) + "</code>",
+    "ok",
+  );
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(link).then(
+      () => { setEditorMsg("🔗 Lien de partage copié dans le presse-papiers.<br><code style='word-break:break-all'>" + escapeHtml(link) + "</code>", "ok"); },
+      show,
+    );
+  } else { show(); }
+}
+function loadSharedMachine(encoded) {
+  // Différé pour s'afficher après la bannière d'accueil.
+  setTimeout(() => {
+    let json;
+    try { json = decodeScenario(encoded); } catch (e) {
+      printLine("🔗 Lien de partage corrompu (impossible de décoder la machine).", "t-err");
+      return;
+    }
+    const res = loadCustomMachine(json);
+    if (!res.ok) {
+      printLine("🔗 Machine partagée refusée : " + res.errors.join(" ; "), "t-err");
+      return;
+    }
+    renderSidebar();
+    printLine(`🔗 Machine partagée « ${res.machine.name} » chargée depuis le lien (bac à sable, non sauvegardée).`, "t-hint");
+    inputEl.value = "use " + res.machine.id;
+    submitInput();
+  }, 600);
+}
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
@@ -738,9 +775,11 @@ function boot() {
   document.getElementById("editor-close").addEventListener("click", closeEditor);
   document.getElementById("editor-load").addEventListener("click", loadFromEditor);
   document.getElementById("editor-download").addEventListener("click", downloadFromEditor);
+  document.getElementById("editor-share").addEventListener("click", shareEditorLink);
   document.getElementById("editor-reset").addEventListener("click", () => { editorEl("editor-json").value = EDITOR_TEMPLATE; setEditorMsg(""); });
   document.getElementById("editor-modal").addEventListener("click", (e) => { if (e.target.id === "editor-modal") closeEditor(); });
   if (location.hash === "#editor") openEditor();
+  if (location.hash.startsWith("#machine=")) loadSharedMachine(location.hash.slice("#machine=".length));
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !editorEl("editor-modal").classList.contains("hidden")) closeEditor(); });
 
   resetSessionToAttacker();

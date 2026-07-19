@@ -216,9 +216,15 @@ reverse shell manuel sur MERIDIAN, `validateMachines` en garde-fou de schéma) :
 - [ ] **Générateur procédural local** — un algorithme JS pur (pas d'IA externe) qui combine
       aléatoirement des "briques" de vulnérabilités (service, faille d'accès, technique de
       privesc) d'un pool prédéfini pour produire de nouvelles machines jouables à la volée
-- [ ] **Partage de scénario par URL** — encoder une machine custom ou une session en
-      base64 dans le hash de l'URL (`#data=...`), pour partager un scénario ou un replay
-      exact sans aucun serveur
+- [x] **Partage de scénario par URL** — une machine custom s'encode en **base64url** (UTF-8,
+      100% ECMAScript, sans `btoa`, donc testable en Node) dans le hash de l'URL via
+      `encodeScenario()`/`decodeScenario()` (dans `engine.js`). Le bouton **« Lien de partage »**
+      de l'éditeur génère `index.html#machine=<token>` et le copie ; à l'ouverture d'un tel lien,
+      la machine est décodée, validée (`loadCustomMachine`) et chargée automatiquement — jouable
+      immédiatement, sans backend. Testé dans `tests/run.js` (round-trip UTF-8, sortie URL-safe,
+      chargement depuis token + exploitation complète, token corrompu géré) et vérifié au rendu
+      (headless). *Reste ouvert* : le partage d'une **session/replay** complet (pas seulement
+      d'une machine).
 - [ ] **Replay local rejouable** — enregistrer la liste des commandes d'une session et
       pouvoir la "rejouer" à l'écran (façon asciinema fait maison, sans dépendance) pour
       vérifier son propre parcours ou en faire un GIF/vidéo côté client

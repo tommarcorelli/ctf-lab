@@ -147,6 +147,10 @@ dans le lab — **déverrouillée et immédiatement jouable** dans le terminal (
 **non sauvegardée** (bac à sable, elle disparaît au rechargement). Le `.json` téléchargé se colle
 tel quel dans `MACHINES` (`js/machines.js`) pour la rendre permanente.
 
+Le bouton **« Lien de partage »** encode la machine en base64url dans un lien
+`index.html#machine=<token>` (copié dans le presse-papiers) : ouvrir ce lien décode, valide et
+charge automatiquement la machine — un scénario se partage donc en une URL, sans aucun serveur.
+
 ## Ajouter une machine
 
 Ajoute un objet dans `MACHINES` (`js/machines.js`) avec le même schéma que les machines
