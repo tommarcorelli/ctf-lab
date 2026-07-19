@@ -990,6 +990,36 @@ section("Chapitre phishing : analyse de mails", () => {
   assertEqual(get(ctx, "GAME.score"), now, "un mail déjà traité ne recrédite pas");
 });
 
+// ── 23. Sous-réseau simulé multi-hôtes (via pivot) ───────────────────────────
+section("Sous-réseau simulé : nmap <cidr> + arp via pivot", () => {
+  const ctx = freshContext();
+  unlockAll(ctx);
+
+  // Sans pivot, le segment interne n'est pas balayable
+  assert(run(ctx, "nmap 172.16.20.0/24").cls === "t-err", "nmap d'un /24 interne échoue sans pivot");
+  assert(/vide/.test(run(ctx, "arp -a").text), "arp -a est vide sans segment joignable");
+
+  // On roote le pivot (NEXUS) puis on ouvre le tunnel
+  run(ctx, "use nexus");
+  MACHINE_SOLUTIONS.nexus(ctx);
+  run(ctx, "ssh -L 9022:172.16.20.10:22 root@10.10.11.135");
+
+  // Le balayage /24 révèle plusieurs hôtes
+  const scan = run(ctx, "nmap 172.16.20.0/24");
+  assert(scan.cls !== "t-err" && /172\.16\.20\.10/.test(scan.text) && /172\.16\.20\.20/.test(scan.text) && /nas-backup/.test(scan.text), "nmap /24 révèle plusieurs hôtes internes");
+
+  // arp -a montre la table du segment
+  const arp = run(ctx, "arp -a");
+  assert(/172\.16\.20\.10/.test(arp.text) && /ether/.test(arp.text), "arp -a liste la table ARP du segment interne");
+
+  // Un hôte leurre répond au scan mais reste une piste morte
+  const decoy = run(ctx, "nmap 172.16.20.20");
+  assert(decoy.cls !== "t-err" && /nas-backup|445/.test(decoy.text) && /piste morte/.test(decoy.text), "un hôte leurre répond au scan (piste morte)");
+
+  // L'hôte exploitable réel (CITADEL) reste scannable normalement
+  assert(/citadel/i.test(run(ctx, "nmap 172.16.20.10").text), "l'hôte exploitable du segment (CITADEL) répond au scan ciblé");
+});
+
 // ── Rapport final ─────────────────────────────────────────────────────────────
 Promise.all(pendingAsync).then(() => {
   console.log(`\n${"─".repeat(60)}`);

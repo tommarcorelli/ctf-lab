@@ -589,7 +589,7 @@ const KNOWN_COMMANDS = [
   "challenges", "challenge", "chint", "submit", "hashcat", "daily", "score", "history",
   "whoami", "id", "groups", "pwd", "ls", "cd", "cat", "find", "echo", "nmap", "curl",
   "ftp", "ssh", "sudo", "crontab", "exit", "man", "docker", "export", "import",
-  "dir", "type", "net", "schtasks", "icacls", "vim", "nc", "cloudctl", "generate", "replay", "sandbox",
+  "dir", "type", "net", "schtasks", "icacls", "vim", "nc", "arp", "cloudctl", "generate", "replay", "sandbox",
   "blueteam", "incident", "answer", "bthint", "firewall", "iptables",
   "phishing", "inbox", "mail", "report", "phhint",
 ];
@@ -1927,6 +1927,7 @@ function dispatch(cmd, args, rawFirst) {
     case "vi":
     case "nano": return cmdVim(args);
     case "nc": return cmdNc(args);
+    case "arp": return cmdArp();
     case "cloudctl": return cmdCloudctl(args);
     case "generate": return cmdGenerate(args);
     case "sandbox": return cmdSandbox(args);
@@ -1973,7 +1974,7 @@ function cmdHelp() {
     "Mode Blue Team : blueteam, incident <id>, answer <id> <question> <valeur>, bthint <id> <question>\n" +
     "Pare-feu : firewall [<id>|reset|exit], iptables -L | -A/-I/-D INPUT ... | -P INPUT ACCEPT|DROP | -F\n" +
     "Phishing : phishing (ou inbox), mail <id>, report <id> <question> <valeur>, phhint <id> <question>\n" +
-    "Reconnaissance : nmap <ip>, curl <url>, ftp <ip>, nc <ip> <port>, cloudctl ls|get|cp\n" +
+    "Reconnaissance : nmap <ip>, nmap <cidr> (balayage de sous-réseau via un pivot), arp -a, curl <url>, ftp <ip>, nc <ip> <port>, cloudctl ls|get|cp\n" +
     "Accès : ssh <user>@<ip> [-p <port>], curl -F \"file=@<webshell>\" <url> (upload), ssh -L <lport>:<hôte_interne>:<port> <user>@<pivot> (tunnel/pivot)\n" +
     "Système (une fois connecté ou en local) : ls [-la], cd, pwd, cat, find, echo, vim <fichier>, whoami, id, sudo -l, sudo <cmd>, crontab -l, docker ps\n" +
     "Windows (machine cible Windows) : dir, type, net user, net localgroup administrators, schtasks /query, icacls <fichier>\n" +
@@ -2443,10 +2444,85 @@ function cmdEcho(args) {
   return out(args.join(" "));
 }
 
+// ── Sous-réseau interne simulé (découverte multi-hôtes via un pivot) ─────────
+// Une fois un tunnel `ssh -L` établi vers un segment interne, `nmap <cidr>` révèle
+// plusieurs hôtes d'un coup et `arp -a` montre la table ARP. Les hôtes "leurres"
+// répondent au scan mais ne sont pas exploitables (pistes mortes = réalisme recon).
+const SUBNETS = [
+  {
+    cidr: "172.16.20.0/24",
+    hosts: [
+      { ip: "172.16.20.1", name: "gw-internal", os: "pfSense 2.7", ports: "—", note: "passerelle du segment" },
+      { ip: "172.16.20.10", name: "citadel", os: "Linux (Debian 12)", ports: "22/ssh, 5432/postgresql", note: "serveur de base de données" },
+      { ip: "172.16.20.20", name: "nas-backup", os: "TrueNAS", ports: "445/smb, 2049/nfs", note: "partages de sauvegarde (hors périmètre)" },
+      { ip: "172.16.20.50", name: "hp-lj-4300", os: "embedded", ports: "80/http, 631/ipp, 9100/jetdirect", note: "imprimante réseau" },
+    ],
+  },
+];
+function subnetReachable(sub) {
+  return !!(SESSION.tunnel && ipInRange(SESSION.tunnel.targetIp, sub.cidr));
+}
+function findSubnet(cidr) {
+  if (SUBNETS.some((s) => s.cidr === cidr)) return SUBNETS.find((s) => s.cidr === cidr);
+  // tolère un /24 dont le réseau correspond (ex : 172.16.20.5/24 -> 172.16.20.0/24)
+  return SUBNETS.find((s) => {
+    const base = s.cidr.split("/")[0];
+    return ipInRange(base, cidr.includes("/") ? cidr.replace(/\.\d+\//, ".0/") : cidr);
+  });
+}
+function decoyHost(ip) {
+  for (const s of SUBNETS) {
+    if (!subnetReachable(s)) continue;
+    const h = s.hosts.find((hh) => hh.ip === ip);
+    if (h) return h;
+  }
+  return null;
+}
+function cmdNmapSubnet(cidr) {
+  const sub = findSubnet(cidr);
+  if (!sub) return out(`Aucune route vers le réseau ${cidr}.`, "t-err");
+  if (!subnetReachable(sub)) {
+    return out(
+      `Aucune route vers le réseau ${cidr} — segment interne non routable directement.\n` +
+        "(établis d'abord un tunnel/pivot vers ce segment, ex. `ssh -L <port>:<hôte_interne>:22 <user>@<pivot>`)",
+      "t-err",
+    );
+  }
+  const header = `Nmap scan report — balayage de ${sub.cidr}\n\nHÔTE            NOM            OS               PORTS`;
+  const rows = sub.hosts.map((h) => `${h.ip.padEnd(15)} ${h.name.padEnd(14)} ${h.os.padEnd(16)} ${h.ports}`);
+  return out(
+    header + "\n" + rows.join("\n") +
+      `\n\n${sub.hosts.length} hôtes actifs. Scanne-en un précisément avec \`nmap <ip>\` ; \`arp -a\` pour la table ARP.`,
+  );
+}
+function fakeMac(ip) {
+  const p = String(ip).split(".").map(Number);
+  const h = (p[2] * 256 + p[3]) & 0xffff;
+  return `02:16:3e:${((p[2]) & 0xff).toString(16).padStart(2, "0")}:${((h >> 8) & 0xff).toString(16).padStart(2, "0")}:${(h & 0xff).toString(16).padStart(2, "0")}`;
+}
+function cmdArp() {
+  const reach = SUBNETS.filter(subnetReachable);
+  if (!reach.length) return out("arp: table vide (aucun segment interne joignable — établis d'abord un tunnel/pivot).");
+  const lines = ["Adresse           HWtype  HWadresse           Iface"];
+  reach.forEach((s) => s.hosts.forEach((h) => lines.push(`${h.ip.padEnd(17)} ether   ${fakeMac(h.ip)}   tun0`)));
+  return out(lines.join("\n"));
+}
+
 function cmdNmap(args) {
+  const cidrArg = args.find((a) => /^\d+\.\d+\.\d+\.\d+\/\d+$/.test(a));
+  if (cidrArg) return cmdNmapSubnet(cidrArg);
   const ip = args.find((a) => /^\d+\.\d+\.\d+\.\d+$/.test(a)) || (SESSION.activeMachine && getMachine(SESSION.activeMachine).ip);
   const machine = MACHINES.find((m) => m.ip === ip);
-  if (!machine) return out(`Aucune route vers l'hôte ${ip || ""}`, "t-err");
+  if (!machine) {
+    const decoy = decoyHost(ip);
+    if (decoy) {
+      return out(
+        `Nmap scan report for ${decoy.name} (${decoy.ip})\nHost is up.\n\nPORTS : ${decoy.ports}\nOS : ${decoy.os}\n` +
+          `(${decoy.note} — aucune vulnérabilité connue exposée ici : piste morte, continue ailleurs)`,
+      );
+    }
+    return out(`Aucune route vers l'hôte ${ip || ""}`, "t-err");
+  }
   if (!GAME.unlocked.includes(machine.id)) return out("Machine verrouillée.", "t-err");
   if (!isReachable(machine)) return unreachableMsg(machine);
   SESSION.activeMachine = machine.id;

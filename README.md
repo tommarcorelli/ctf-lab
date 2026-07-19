@@ -38,7 +38,8 @@ utilisés sont sauvegardés dans le `localStorage` du navigateur (clé `ctf_lab_
 - **NEXUS** (difficile) — upload de webshell mal filtré (`curl -F` d'un `.php` déguisé) → reverse shell
   www-data → sudo GTFOBins (`tar --checkpoint`)
 - **CITADEL** (expert) — **hôte interne** injoignable directement : pivot via NEXUS rooté (`ssh -L`) →
-  SSH sur l'IP interne → sudo GTFOBins (`perl`)
+  SSH sur l'IP interne → sudo GTFOBins (`perl`). Une fois le tunnel établi, `nmap 172.16.20.0/24`
+  balaie le **sous-réseau interne** (plusieurs hôtes, dont des leurres) et `arp -a` montre la table ARP.
 - **TEMPEST** (difficile) — CI/CD avec un bucket de déploiement **inscriptible** (`cloudctl cp`) dont le
   contenu est exécuté par le pipeline (RCE) → shell `ci` → sudo GTFOBins (`nmap --interactive`)
 - **AXIOM** (insane) — logs CI/CD exposés → SSH → appartenance au groupe `docker` (équivalent root via
