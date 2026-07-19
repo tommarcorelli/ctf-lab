@@ -885,6 +885,39 @@ section("Bac à sable libre : FS custom, sans flag ni score", () => {
   assert(run(ctx, "cd vide").cls !== "t-err", "FS custom : dossier vide navigable");
 });
 
+// ── 20. Mode Blue Team : analyse de logs (SOC) ───────────────────────────────
+section("Mode Blue Team : analyse de logs", () => {
+  const ctx = freshContext();
+  const incidents = get(ctx, "BLUE_INCIDENTS");
+  assert(incidents.length >= 3, `au moins 3 incidents Blue Team (trouvé ${incidents.length})`);
+
+  assert(/Blue Team/.test(run(ctx, "blueteam").text), "`blueteam` liste les incidents");
+  const show = run(ctx, `incident ${incidents[0].id}`);
+  assert(/LOGS/.test(show.text) && /Failed password|GET |POST /.test(show.text), "`incident` affiche le scénario + les logs");
+
+  // Mauvaise réponse rejetée, indice disponible
+  const wrong = run(ctx, `answer ${incidents[0].id} ${incidents[0].questions[0].id} 1.2.3.4`);
+  assert(wrong.cls === "t-err", "une mauvaise réponse est rejetée");
+  assert(run(ctx, `bthint ${incidents[0].id} ${incidents[0].questions[0].id}`).cls === "t-hint", "`bthint` donne un indice");
+
+  // Résolution complète de chaque incident (réponses en MAJUSCULES -> teste la normalisation)
+  let expected = get(ctx, "GAME.score");
+  for (const inc of incidents) {
+    for (const q of inc.questions) {
+      run(ctx, `answer ${inc.id} ${q.id} ${String(q.accept[0]).toUpperCase()}`);
+    }
+    expected += inc.points;
+    assert(get(ctx, `GAME.blueteam.solved[${JSON.stringify(inc.id)}]`), `${inc.id} : résolu après toutes les bonnes réponses`);
+  }
+  assertEqual(get(ctx, "GAME.score"), expected, "le score gagne les points de chaque incident résolu");
+  assertEqual(get(ctx, "GAME.badges.blueteam_complete"), true, "badge Analyste SOC débloqué après tous les incidents");
+
+  // Pas de double crédit
+  const scoreNow = get(ctx, "GAME.score");
+  run(ctx, `answer ${incidents[0].id} ${incidents[0].questions[0].id} ${incidents[0].questions[0].accept[0]}`);
+  assertEqual(get(ctx, "GAME.score"), scoreNow, "un incident déjà résolu ne recrédite pas de points");
+});
+
 // ── Rapport final ─────────────────────────────────────────────────────────────
 Promise.all(pendingAsync).then(() => {
   console.log(`\n${"─".repeat(60)}`);

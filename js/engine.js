@@ -54,6 +54,10 @@ function sanitizeGameState(data) {
   if (!data.jeopardy.solved || typeof data.jeopardy.solved !== "object") data.jeopardy.solved = {};
   if (!data.jeopardy.hintsUsed || typeof data.jeopardy.hintsUsed !== "object") data.jeopardy.hintsUsed = {};
   if (typeof data.insaneMode !== "boolean") data.insaneMode = false; // migration v4 -> mode Insane
+  if (!data.blueteam || typeof data.blueteam !== "object") data.blueteam = { solved: {}, answered: {}, hintsUsed: {} }; // migration v5 -> mode Blue Team
+  if (!data.blueteam.solved || typeof data.blueteam.solved !== "object") data.blueteam.solved = {};
+  if (!data.blueteam.answered || typeof data.blueteam.answered !== "object") data.blueteam.answered = {};
+  if (!data.blueteam.hintsUsed || typeof data.blueteam.hintsUsed !== "object") data.blueteam.hintsUsed = {};
   data.saveVersion = SAVE_VERSION;
   return data;
 }
@@ -62,7 +66,7 @@ function loadSave() {
     const raw = localStorage.getItem(SAVE_KEY);
     if (raw) return sanitizeGameState(JSON.parse(raw));
   } catch (e) {}
-  return sanitizeGameState({ score: 0, unlocked: [MACHINES[0].id], progress: {}, hintsUsed: {}, times: {}, badges: {}, bestTimes: {}, jeopardy: { solved: {}, hintsUsed: {} }, insaneMode: false });
+  return sanitizeGameState({ score: 0, unlocked: [MACHINES[0].id], progress: {}, hintsUsed: {}, times: {}, badges: {}, bestTimes: {}, jeopardy: { solved: {}, hintsUsed: {} }, blueteam: { solved: {}, answered: {}, hintsUsed: {} }, insaneMode: false });
 }
 function persistSave() {
   localStorage.setItem(SAVE_KEY, JSON.stringify(GAME));
@@ -580,6 +584,7 @@ const KNOWN_COMMANDS = [
   "whoami", "id", "groups", "pwd", "ls", "cd", "cat", "find", "echo", "nmap", "curl",
   "ftp", "ssh", "sudo", "crontab", "exit", "man", "docker", "export", "import",
   "dir", "type", "net", "schtasks", "icacls", "vim", "nc", "cloudctl", "generate", "replay", "sandbox",
+  "blueteam", "incident", "answer", "bthint",
 ];
 const PATH_COMMANDS = ["cd", "ls", "cat", "find", "dir", "type", "icacls", "vim"];
 
@@ -799,6 +804,14 @@ const BADGE_DEFS = [
     desc: "Résous tous les défis du mode Jeopardy.",
     scope: "global",
     check: () => CHALLENGES.every((c) => GAME.jeopardy.solved[c.id]),
+  },
+  {
+    id: "blueteam_complete",
+    icon: "🛡️",
+    label: "Analyste SOC",
+    desc: "Résous tous les incidents du mode Blue Team.",
+    scope: "global",
+    check: () => BLUE_INCIDENTS.every((i) => GAME.blueteam.solved[i.id]),
   },
 ];
 function checkGlobalBadges() {
@@ -1105,6 +1118,128 @@ function cmdDaily() {
     `🔥 Défi du jour (${today}) : ${c.title} [${c.category} · ${c.points} pts]${solved ? " — déjà résolu ✅" : ""}\n` +
     `Tape \`challenge ${c.id}\` pour le voir.`
   );
+}
+
+// ── Mode Blue Team : analyse de logs (SOC), tout en dur, aucune IA ───────────
+const BLUE_INCIDENTS = [
+  {
+    id: "bt-ssh", title: "Connexions SSH suspectes", points: 200,
+    scenario: "Le serveur `srv-web01` a levé une alerte de connexions SSH répétées cette nuit. Voici un extrait de /var/log/auth.log. Identifie l'attaquant, ce qu'il a obtenu et comment.",
+    log: [
+      "Jan 12 02:58:10 srv-web01 sshd[1990]: Accepted password for deploy from 10.0.0.5 port 40122 ssh2",
+      "Jan 12 03:14:02 srv-web01 sshd[2011]: Failed password for admin from 45.83.12.7 port 51122 ssh2",
+      "Jan 12 03:14:03 srv-web01 sshd[2013]: Failed password for admin from 45.83.12.7 port 51124 ssh2",
+      "Jan 12 03:14:05 srv-web01 sshd[2015]: Failed password for root from 45.83.12.7 port 51130 ssh2",
+      "Jan 12 03:14:07 srv-web01 sshd[2017]: Failed password for admin from 45.83.12.7 port 51133 ssh2",
+      "Jan 12 03:14:10 srv-web01 sshd[2019]: Failed password for admin from 45.83.12.7 port 51140 ssh2",
+      "Jan 12 03:15:41 srv-web01 sshd[2044]: Failed password for postgres from 45.83.12.7 port 51190 ssh2",
+      "Jan 12 03:18:22 srv-web01 sshd[2088]: Failed password for admin from 45.83.12.7 port 51350 ssh2",
+      "Jan 12 03:19:48 srv-web01 sshd[2101]: Accepted password for admin from 45.83.12.7 port 51402 ssh2",
+      "Jan 12 03:19:48 srv-web01 sshd[2101]: pam_unix(sshd:session): session opened for user admin by (uid=0)",
+    ].join("\n"),
+    questions: [
+      { id: "ip", prompt: "IP de l'attaquant ?", accept: ["45.83.12.7"], hint: "Une seule IP enchaîne des dizaines d'échecs d'affilée." },
+      { id: "user", prompt: "Compte finalement compromis ?", accept: ["admin"], hint: "Cherche la ligne « Accepted password » qui vient de l'IP attaquante." },
+      { id: "time", prompt: "Heure de la compromission (HH:MM) ?", accept: ["03:19", "0319"], hint: "L'horodatage du « Accepted password » depuis l'IP malveillante." },
+      { id: "technique", prompt: "Technique employée (un mot) ?", accept: ["bruteforce", "forcebrute", "bruteforcessh", "dictionnaire"], hint: "Beaucoup d'essais de mots de passe jusqu'au succès." },
+    ],
+  },
+  {
+    id: "bt-lfi", title: "Requêtes web anormales", points: 200,
+    scenario: "Le WAF a laissé passer du trafic étrange sur le site vitrine. Extrait du access.log Nginx. Qui attaque, quoi, et comment ?",
+    log: [
+      '198.51.100.23 - - [12/Jan/2026:10:02:11 +0000] "GET / HTTP/1.1" 200 1043 "-" "Mozilla/5.0"',
+      '203.0.113.77 - - [12/Jan/2026:10:05:31 +0000] "GET /index.php?page=../../../../etc/passwd HTTP/1.1" 200 812 "-" "curl/8.2"',
+      '203.0.113.77 - - [12/Jan/2026:10:05:44 +0000] "GET /index.php?page=../../../../etc/shadow HTTP/1.1" 403 153 "-" "curl/8.2"',
+      '198.51.100.23 - - [12/Jan/2026:10:06:02 +0000] "GET /about HTTP/1.1" 200 2210 "-" "Mozilla/5.0"',
+      '203.0.113.77 - - [12/Jan/2026:10:06:20 +0000] "GET /index.php?page=../../../../var/log/auth.log HTTP/1.1" 200 4501 "-" "curl/8.2"',
+    ].join("\n"),
+    questions: [
+      { id: "ip", prompt: "IP de l'attaquant ?", accept: ["203.0.113.77"], hint: "L'IP qui manipule le paramètre `page=` avec des `../`." },
+      { id: "fichier", prompt: "Premier fichier sensible lu avec succès (code 200) ?", accept: ["/etc/passwd", "etcpasswd"], hint: "La 1re requête `page=../../etc/...` renvoie un 200 ; `/etc/shadow` lui renvoie 403." },
+      { id: "technique", prompt: "Technique (un mot / sigle) ?", accept: ["lfi", "traversal", "pathtraversal", "directorytraversal", "inclusiondefichier"], hint: "Remonter l'arborescence avec `../` pour lire des fichiers = inclusion de fichier local." },
+    ],
+  },
+  {
+    id: "bt-sqli", title: "Scan applicatif automatisé", points: 200,
+    scenario: "La boutique en ligne renvoie des erreurs SQL intermittentes. Extrait du access.log. Identifie l'outil et la technique.",
+    log: [
+      '192.0.2.88 - - [12/Jan/2026:14:21:09 +0000] "GET /products?id=1 HTTP/1.1" 200 900 "-" "sqlmap/1.7"',
+      '192.0.2.88 - - [12/Jan/2026:14:21:10 +0000] "GET /products?id=1%20AND%201=1 HTTP/1.1" 200 900 "-" "sqlmap/1.7"',
+      '192.0.2.88 - - [12/Jan/2026:14:21:12 +0000] "GET /products?id=1%20AND%201=2 HTTP/1.1" 200 42 "-" "sqlmap/1.7"',
+      '192.0.2.88 - - [12/Jan/2026:14:21:15 +0000] "GET /products?id=1%20UNION%20SELECT%20username,password%20FROM%20users HTTP/1.1" 200 1337 "-" "sqlmap/1.7"',
+    ].join("\n"),
+    questions: [
+      { id: "ip", prompt: "IP de l'attaquant ?", accept: ["192.0.2.88"], hint: "Une seule IP, un User-Agent très parlant." },
+      { id: "outil", prompt: "Outil utilisé (User-Agent) ?", accept: ["sqlmap"], hint: "Regarde le champ User-Agent entre guillemets." },
+      { id: "technique", prompt: "Technique (sigle) ?", accept: ["sqli", "injectionsql", "sqlinjection", "unionbased"], hint: "`UNION SELECT ... FROM users` dans un paramètre = injection SQL." },
+    ],
+  },
+];
+function btNorm(s) { return String(s || "").trim().toLowerCase().replace(/[\s_\-]/g, ""); }
+function cmdBlueteam() {
+  const lines = ["🛡️ Mode Blue Team — analyse de logs (façon SOC) :", ""];
+  BLUE_INCIDENTS.forEach((inc) => {
+    const solved = GAME.blueteam.solved[inc.id];
+    const ans = GAME.blueteam.answered[inc.id] || {};
+    const done = inc.questions.filter((q) => ans[q.id]).length;
+    lines.push(`${solved ? "✅" : "🛡️"} ${inc.id.padEnd(9)} ${String(inc.points).padStart(3)} pts  ${inc.title}  (${done}/${inc.questions.length} réponses)`);
+  });
+  lines.push("");
+  lines.push("Détail + logs : `incident <id>` · Indice : `bthint <id> <question>` · Réponse : `answer <id> <question> <valeur>`");
+  return out(lines.join("\n"));
+}
+function cmdIncident(args) {
+  const inc = BLUE_INCIDENTS.find((i) => i.id === args[0]);
+  if (!inc) return out("Incident inconnu. Tape `blueteam` pour la liste.", "t-err");
+  const ans = GAME.blueteam.answered[inc.id] || {};
+  const solved = GAME.blueteam.solved[inc.id];
+  const qlines = inc.questions.map((q) => `  ${ans[q.id] ? "✅" : "❓"} [${q.id}] ${q.prompt}`);
+  return out(
+    `━━ ${inc.title} [${inc.points} pts]${solved ? " — résolu ✅" : ""} ━━\n\n${inc.scenario}\n\n` +
+      `─── LOGS ───\n${inc.log}\n────────────\n\n` +
+      `Questions :\n${qlines.join("\n")}\n\n` +
+      `Réponds avec : \`answer ${inc.id} <question> <valeur>\` (ex : \`answer ${inc.id} ${inc.questions[0].id} ...\`). Indice : \`bthint ${inc.id} <question>\`.`,
+  );
+}
+function cmdBthint(args) {
+  const inc = BLUE_INCIDENTS.find((i) => i.id === args[0]);
+  if (!inc) return out("Incident inconnu. Tape `blueteam` pour la liste.", "t-err");
+  const q = inc.questions.find((qq) => qq.id === args[1]);
+  if (!q) return out(`Question inconnue. Questions : ${inc.questions.map((qq) => qq.id).join(", ")}.`, "t-err");
+  if (GAME.insaneMode) return out("🔥 Mode Insane actif : aucun indice disponible.", "t-err");
+  if (!GAME.blueteam.hintsUsed[inc.id]) GAME.blueteam.hintsUsed[inc.id] = {};
+  GAME.blueteam.hintsUsed[inc.id][q.id] = (GAME.blueteam.hintsUsed[inc.id][q.id] || 0) + 1;
+  persistSave();
+  return out(`💡 ${inc.id}/${q.id} : ${q.hint}`, "t-hint");
+}
+function cmdAnswer(args) {
+  const inc = BLUE_INCIDENTS.find((i) => i.id === args[0]);
+  if (!inc) return out("Incident inconnu. Tape `blueteam` pour la liste.", "t-err");
+  const q = inc.questions.find((qq) => qq.id === args[1]);
+  if (!q) return out(`Question inconnue. Questions de ${inc.id} : ${inc.questions.map((qq) => qq.id).join(", ")}.`, "t-err");
+  if (GAME.blueteam.solved[inc.id]) return out("Incident déjà résolu — bien joué, analyste !", "t-hint");
+  const value = args.slice(2).join(" ").trim();
+  if (!value) return out(`usage: answer ${inc.id} ${q.id} <valeur>`, "t-err");
+  if (!q.accept.map(btNorm).includes(btNorm(value))) return out("❌ Mauvaise réponse — relis les logs.", "t-err");
+  if (!GAME.blueteam.answered[inc.id]) GAME.blueteam.answered[inc.id] = {};
+  GAME.blueteam.answered[inc.id][q.id] = true;
+  const ans = GAME.blueteam.answered[inc.id];
+  const remaining = inc.questions.filter((qq) => !ans[qq.id]);
+  if (remaining.length) {
+    persistSave();
+    return out(`✅ Bonne réponse pour « ${q.id} ». Reste : ${remaining.map((qq) => qq.id).join(", ")}.`, "t-ok");
+  }
+  // toutes les questions correctes -> incident résolu
+  GAME.blueteam.solved[inc.id] = true;
+  addScore(inc.points);
+  toast(`🛡️ Incident résolu : ${inc.title} (+${inc.points} pts)`);
+  if (typeof playFlagSound === "function") playFlagSound();
+  if (typeof spawnFlagParticles === "function") spawnFlagParticles();
+  checkGlobalBadges();
+  persistSave();
+  if (typeof renderSidebar === "function") renderSidebar();
+  return out(`✅ Dernière réponse correcte — incident « ${inc.title} » résolu ! +${inc.points} pts.`, "t-ok");
 }
 
 // ── Détection & capture de flags dans une sortie ─────────────────────────────
@@ -1485,6 +1620,10 @@ function dispatch(cmd, args, rawFirst) {
     case "cloudctl": return cmdCloudctl(args);
     case "generate": return cmdGenerate(args);
     case "sandbox": return cmdSandbox(args);
+    case "blueteam": return cmdBlueteam();
+    case "incident": return cmdIncident(args);
+    case "answer": return cmdAnswer(args);
+    case "bthint": return cmdBthint(args);
     default: {
       if (SESSION.ctx !== "attacker") {
         const machine = getMachine(SESSION.ctx);
@@ -1514,6 +1653,7 @@ function cmdHelp() {
   return out(
     "Commandes générales : help, clear, machines, use <nom>, reset <nom>, hint, insane [on|off], progress, badges, records, writeup <nom>, export <passphrase>, import, score, exit\n" +
     "Mode Jeopardy : challenges, challenge <id>, chint <id>, submit <id> <flag>, hashcat <hash>, daily\n" +
+    "Mode Blue Team : blueteam, incident <id>, answer <id> <question> <valeur>, bthint <id> <question>\n" +
     "Reconnaissance : nmap <ip>, curl <url>, ftp <ip>, nc <ip> <port>, cloudctl ls|get|cp\n" +
     "Accès : ssh <user>@<ip> [-p <port>], curl -F \"file=@<webshell>\" <url> (upload), ssh -L <lport>:<hôte_interne>:<port> <user>@<pivot> (tunnel/pivot)\n" +
     "Système (une fois connecté ou en local) : ls [-la], cd, pwd, cat, find, echo, vim <fichier>, whoami, id, sudo -l, sudo <cmd>, crontab -l, docker ps\n" +
@@ -1641,7 +1781,8 @@ function gameIsPristine() {
   return MACHINES.every((m) => {
     const p = GAME.progress[m.id];
     return !p.recon && !p.access && !p.privesc && !p.userFlag && !p.rootFlag;
-  }) && Object.keys(GAME.jeopardy.solved).length === 0;
+  }) && Object.keys(GAME.jeopardy.solved).length === 0
+    && Object.keys(GAME.blueteam.answered).length === 0;
 }
 function cmdInsane(args) {
   const arg = (args[0] || "").toLowerCase();

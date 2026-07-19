@@ -263,10 +263,16 @@ reverse shell manuel sur MERIDIAN, `validateMachines` en garde-fou de schéma) :
       IP d'un coup, table ARP simulée, et un faux `proxychains`/pivot pour router les commandes
       d'une machine compromise vers une machine interne — version "réseau" plus poussée de
       l'idée pivot déjà en Phase 2
-- [ ] **Mode Blue Team** — en plus d'attaquer, un mode où le joueur reçoit un faux dump de logs
-      (auth.log, access.log Nginx) et doit répondre à des questions façon SOC (identifier l'IP
-      attaquante, l'heure de la compromission, la technique utilisée) — tout généré en dur, pas
-      d'IDS réel
+- [x] **Mode Blue Team** — 3 incidents (`BLUE_INCIDENTS`, tout en dur) où le joueur reçoit un
+      dump de logs (auth.log brute-force SSH, access.log Nginx LFI/path-traversal, scan sqlmap) et
+      répond à des questions façon SOC (IP attaquante, compte/fichier compromis, heure, technique).
+      Commandes **`blueteam`** (liste), **`incident <id>`** (scénario + logs + questions),
+      **`answer <id> <question> <valeur>`** (réponse tolérante : normalisation casse/espaces +
+      plusieurs formulations acceptées), **`bthint <id> <question>`** (indice). Points par incident
+      résolu (via `addScore`, donc soumis au ×1.5 du mode Insane), badge **🛡️ Analyste SOC** quand
+      tout est résolu, bouton `blueteam` dans la quickbar. Testé dans `tests/run.js` (liste,
+      affichage, mauvaise réponse, indice, résolution complète + normalisation, score, badge, pas de
+      double crédit) et vérifié au rendu.
 - [ ] **Visualiseur de stack pédagogique** — pour une machine "buffer overflow" 100% simulée :
       un schéma animé de la pile (petits blocs mémoire) qui montre comment un `payload` fourni
       par le joueur écrase l'adresse de retour, sans jamais exécuter de code réel — but purement

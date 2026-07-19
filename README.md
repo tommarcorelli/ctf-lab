@@ -89,6 +89,16 @@ RSA volontairement minuscule pour retrouver la clé privée. Le défi "Photo de 
 cache un flag dans un faux champ de métadonnées EXIF (aucun vrai binaire image à parser). La
 commande `daily` met en avant un défi différent chaque jour (seed = date du jour).
 
+## Mode Blue Team
+
+En complément de l'attaque, un mode **défense** façon SOC : 3 incidents où tu reçois un dump de
+logs (auth.log brute-force SSH, access.log Nginx LFI/path-traversal, scan `sqlmap`) et dois répondre
+à des questions d'analyse. `blueteam` liste les incidents, `incident <id>` affiche le scénario + les
+logs + les questions, `answer <id> <question> <valeur>` soumet une réponse (tolérante à la casse et
+aux espaces, plusieurs formulations acceptées), `bthint <id> <question>` donne un indice. Chaque
+incident entièrement résolu rapporte des points ; les résoudre tous débloque le badge **🛡️ Analyste
+SOC**. Tout est généré en dur (aucun IDS ni backend).
+
 ## Accessibilité & hors-ligne
 
 Le bouton de thème (🌙/☀️/◐) propose désormais un 3ᵉ thème **contraste élevé**. Le terminal utilise
