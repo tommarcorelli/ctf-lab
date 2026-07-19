@@ -311,8 +311,11 @@ reverse shell manuel sur MERIDIAN, `validateMachines` en garde-fou de schéma) :
       nature/faille, exact pour clé/hexa), `rehint` pour un indice. Points par échantillon, badge
       **🔬 Reverse engineer**. Testé dans `tests/run.js` (liste, strings, disas, mauvaise réponse,
       résolution des 2 échantillons, score, badge) et vérifié au rendu.
-- [ ] **Terminal multi-panes façon tmux** — split horizontal/vertical simulé au sein d'un même
-      onglet (un pane shell, un pane logs qui défile) pour les machines plus avancées
+- [x] **Terminal multi-panes façon tmux** — la commande **`split`** (ou `tmux`, bouton **▦**)
+      ouvre un **panneau latéral « Journal »** à droite du shell (3ᵉ colonne de `.layout.split`) qui
+      **défile** en affichant en direct chaque commande tapée (cyan) et chaque évènement/toast
+      (ambre : recon, flags, badges, déblocages…). Bouton pour vider le journal. Un pane shell + un
+      pane logs, sans onglet ni fenêtre séparée. Vérifié au rendu.
 - [x] **Mode "fantôme" sur le replay** — dans l'overlay de replay, le bouton **👻 Charger un
       fantôme** importe un replay `.json` (le sien ou un partagé) ; « Rejouer » lance alors une
       **course en double colonne** (`playGhostReplay`) : ta session à gauche, le fantôme à droite,

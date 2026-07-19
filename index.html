@@ -36,6 +36,7 @@
     <button id="sandbox-toggle" class="icon-toggle" type="button" title="Bac à sable libre (FS custom)">🧪</button>
     <button id="graph-toggle" class="icon-toggle" type="button" title="Graphe d'attaque">🗺️</button>
     <button id="stack-toggle" class="icon-toggle" type="button" title="Défi buffer overflow (pile)">🧠</button>
+    <button id="split-toggle" class="icon-toggle" type="button" title="Panneau journal (split façon tmux)">▦</button>
   </header>
 
   <main class="layout">
@@ -73,6 +74,11 @@
         <button data-cmd="clear">clear</button>
       </div>
     </section>
+
+    <aside id="side-pane" class="side-pane hidden">
+      <div class="side-pane-h"><span>📜 Journal</span><button id="side-clear" class="side-clear" type="button" title="Vider le journal">⌫</button></div>
+      <div id="side-pane-body" class="side-pane-body" role="log" aria-live="polite"></div>
+    </aside>
   </main>
 
   <div id="editor-modal" class="editor-modal hidden" role="dialog" aria-modal="true" aria-labelledby="editor-title">

@@ -641,7 +641,33 @@ function promptString() {
 }
 function clearTerminal() { outputEl.innerHTML = ""; }
 
+// ── Panneau latéral "journal" (split façon tmux) ─────────────────────────────
+function sidePaneVisible() {
+  const p = document.getElementById("side-pane");
+  return p && !p.classList.contains("hidden");
+}
+function sideLog(text, cls) {
+  if (!sidePaneVisible() || !text) return;
+  const body = document.getElementById("side-pane-body");
+  const d = document.createElement("div");
+  d.className = "side-line " + (cls || "");
+  d.textContent = text;
+  body.appendChild(d);
+  body.scrollTop = body.scrollHeight;
+  while (body.childElementCount > 300) body.removeChild(body.firstChild);
+}
+function toggleSplit() {
+  const pane = document.getElementById("side-pane");
+  const layout = document.querySelector(".layout");
+  const nowHidden = pane.classList.toggle("hidden");
+  layout.classList.toggle("split", !nowHidden);
+  if (!nowHidden && !document.getElementById("side-pane-body").childElementCount) {
+    sideLog("📜 Journal activé — commandes et évènements s'affichent ici.", "evt");
+  }
+}
+
 function toast(msg) {
+  sideLog("• " + msg, "evt");
   const d = document.createElement("div");
   d.className = "toast";
   d.textContent = msg;
@@ -769,8 +795,15 @@ function submitInput() {
 
   const prompt = promptString();
   printPrompt(val);
+  sideLog(prompt + " " + val, "cmd");
 
   const firstWord = val.trim().split(/\s+/)[0] || "";
+  if (firstWord === "split" || firstWord === "tmux") {
+    toggleSplit();
+    printLine("▦ Panneau journal " + (sidePaneVisible() ? "activé" : "masqué") + " (split façon tmux).", "t-hint");
+    updatePromptLabel();
+    return;
+  }
   if (firstWord === "export") {
     handleExportCommand(val.trim().split(/\s+/).slice(1)).then(() => { outputEl.scrollTop = outputEl.scrollHeight; });
     updatePromptLabel();
@@ -1051,6 +1084,9 @@ function boot() {
   document.getElementById("graph-select").addEventListener("change", renderGraph);
   document.getElementById("graph-modal").addEventListener("click", (e) => { if (e.target.id === "graph-modal") closeGraph(); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !document.getElementById("graph-modal").classList.contains("hidden")) closeGraph(); });
+
+  document.getElementById("split-toggle").addEventListener("click", toggleSplit);
+  document.getElementById("side-clear").addEventListener("click", () => { document.getElementById("side-pane-body").innerHTML = ""; });
 
   document.getElementById("stack-toggle").addEventListener("click", openStack);
   document.getElementById("stack-close").addEventListener("click", closeStack);

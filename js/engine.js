@@ -672,7 +672,7 @@ const KNOWN_COMMANDS = [
   "dir", "type", "net", "schtasks", "icacls", "vim", "nc", "arp", "cloudctl", "generate", "replay", "sandbox",
   "blueteam", "incident", "answer", "bthint", "firewall", "iptables",
   "phishing", "inbox", "mail", "report", "phhint",
-  "malware", "re", "strings", "disas", "disasm", "resolve", "rehint", "graph", "stack", "skills", "whois", "undo", "redo", "profiles", "profile",
+  "malware", "re", "strings", "disas", "disasm", "resolve", "rehint", "graph", "stack", "skills", "whois", "undo", "redo", "profiles", "profile", "split", "tmux",
 ];
 const PATH_COMMANDS = ["cd", "ls", "cat", "find", "dir", "type", "icacls", "vim"];
 
@@ -2387,7 +2387,8 @@ function cmdHelp() {
     "Bac à sable : generate [seed] (machine aléatoire jouable), sandbox (FS libre pour s'entraîner, bouton 🧪), éditeur de machines (🛠️), replay (rejoue ta session, ▶️)\n" +
     "Visualisation : graph [machine] (graphe d'attaque, bouton 🗺️), stack (défi buffer overflow schématisé, bouton 🧠)\n" +
     "Progression : score, skills (arbre de compétences / rang), whois <ip> (recon avancée, niv.2+)\n" +
-    "Hot-seat : profiles (comparer les joueurs), profile <nom> (changer/créer un profil local)"
+    "Hot-seat : profiles (comparer les joueurs), profile <nom> (changer/créer un profil local)\n" +
+    "Affichage : split (ou tmux, bouton ▦) — panneau latéral « journal » des commandes et évènements"
   );
 }
 
