@@ -35,6 +35,7 @@
     <button id="replay-toggle" class="icon-toggle" type="button" title="Rejouer la session (replay)">▶️</button>
     <button id="sandbox-toggle" class="icon-toggle" type="button" title="Bac à sable libre (FS custom)">🧪</button>
     <button id="graph-toggle" class="icon-toggle" type="button" title="Graphe d'attaque">🗺️</button>
+    <button id="stack-toggle" class="icon-toggle" type="button" title="Défi buffer overflow (pile)">🧠</button>
   </header>
 
   <main class="layout">
@@ -153,6 +154,29 @@
       </div>
       <div id="graph-container" class="graph-container"></div>
       <p class="editor-desc">Les nœuds s'allument à mesure que tu progresses : recon → accès initial → élévation de privilèges → flags.</p>
+    </div>
+  </div>
+
+  <div id="stack-modal" class="editor-modal hidden" role="dialog" aria-modal="true" aria-labelledby="stack-title">
+    <div class="editor-card">
+      <div class="editor-head">
+        <h2 id="stack-title">🧠 Buffer overflow (pédagogique)</h2>
+        <button id="stack-close" class="editor-close" type="button" aria-label="Fermer le défi pile">✕</button>
+      </div>
+      <p class="editor-desc">
+        Une fonction lit une entrée dans <code>char buf[16]</code> sans vérifier la taille. La pile
+        contient ensuite le <strong>RBP sauvé</strong> (8 o) puis l'<strong>adresse de retour</strong>
+        (8 o, offset 24). Fais déborder le buffer pour écraser l'adresse de retour avec l'adresse de
+        <code>win()</code> = <code>0x401156</code>. <strong>Aucun code n'est réellement exécuté</strong> —
+        c'est un schéma pédagogique.
+      </p>
+      <div class="stack-toolbar">
+        <label>Octets de bourrage : <input id="stack-fill" class="stack-input" type="number" min="0" value="0"></label>
+        <label>Adresse de retour : <input id="stack-addr" class="stack-input" type="text" placeholder="0x401156" size="12"></label>
+        <button id="stack-inject" class="editor-btn primary" type="button">Injecter</button>
+      </div>
+      <div id="stack-viz" class="stack-viz-wrap"></div>
+      <div id="stack-verdict" class="editor-msg"></div>
     </div>
   </div>
 

@@ -474,3 +474,41 @@ html, body {
 .attack-graph .ag-edge { stroke: var(--step-off); stroke-width: 2; }
 .attack-graph .ag-edge.on { stroke: var(--green); }
 .attack-graph .ag-arrowhead { fill: var(--step-off); }
+
+/* ── Visualiseur de pile (buffer overflow) ────────────────────────────────── */
+.stack-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 18px 0;
+  color: var(--text-dim);
+  font-size: .84rem;
+}
+.stack-input {
+  background: var(--bg-elevated);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: .84rem;
+  margin-left: 4px;
+}
+.stack-viz-wrap { padding: 6px 18px; display: flex; justify-content: center; }
+.stack-viz { width: 100%; max-width: 380px; height: auto; }
+.stack-viz .sk-slot rect {
+  fill: var(--bg-elevated);
+  stroke: var(--step-off);
+  stroke-width: 1.5;
+  transition: fill .25s ease, stroke .25s ease;
+}
+.stack-viz .sk-slot.fill rect { fill: color-mix(in srgb, var(--amber) 26%, var(--bg-panel)); stroke: var(--amber); }
+.stack-viz .sk-slot.crash rect { fill: color-mix(in srgb, var(--red) 26%, var(--bg-panel)); stroke: var(--red); }
+.stack-viz .sk-slot.hijack rect { fill: color-mix(in srgb, var(--green) 26%, var(--bg-panel)); stroke: var(--green); stroke-width: 2.5; }
+.stack-viz .sk-t { fill: var(--text); font: 600 12px "Cascadia Code", Consolas, monospace; text-anchor: middle; }
+.stack-viz .sk-s { fill: var(--text-dim); font: 11px "Cascadia Code", Consolas, monospace; text-anchor: middle; }
+.stack-viz .sk-axis { fill: var(--text-dim); font: 11px "Cascadia Code", Consolas, monospace; text-anchor: middle; opacity: .8; }
+.stack-viz .sk-info { fill: var(--text-dim); font: 11px "Cascadia Code", Consolas, monospace; text-anchor: middle; }
+.stack-viz .sk-verdict { fill: var(--text-dim); font: 600 12px "Cascadia Code", Consolas, monospace; text-anchor: middle; }
+.stack-viz .sk-verdict.win { fill: var(--green); }

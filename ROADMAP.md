@@ -282,10 +282,16 @@ reverse shell manuel sur MERIDIAN, `validateMachines` en garde-fou de schéma) :
       tout est résolu, bouton `blueteam` dans la quickbar. Testé dans `tests/run.js` (liste,
       affichage, mauvaise réponse, indice, résolution complète + normalisation, score, badge, pas de
       double crédit) et vérifié au rendu.
-- [ ] **Visualiseur de stack pédagogique** — pour une machine "buffer overflow" 100% simulée :
-      un schéma animé de la pile (petits blocs mémoire) qui montre comment un `payload` fourni
-      par le joueur écrase l'adresse de retour, sans jamais exécuter de code réel — but purement
-      pédagogique, aucune primitive d'exploitation binaire réelle
+- [x] **Visualiseur de stack pédagogique** — défi buffer overflow 100% simulé : la commande
+      **`stack`** (ou le bouton **🧠**) ouvre une modale avec un **schéma SVG de la pile**
+      (`char buf[16]` → RBP sauvé → adresse de retour). Le joueur ajuste les octets de **bourrage**
+      et l'**adresse de retour** ; les blocs se colorent (ambre = écrasé par le bourrage, rouge =
+      RET écrasée avec la mauvaise adresse, **vert = RET détournée vers `win()`** à l'offset 24 avec
+      `0x401156`) avec des transitions CSS. `stackEval`/`buildStackSVG` sont purs (dans `engine.js`,
+      testables) ; `attemptStack` crédite 200 pts + badge **🧠 Exploiteur (pédagogique)** à la
+      réussite. **Aucun code réel n'est exécuté**, aucune primitive binaire. Testé dans
+      `tests/run.js` (états safe/rbp/early/ret-wrong/win, scoring une seule fois, structure SVG) et
+      vérifié au rendu.
 - [x] **Casseur de hash simulé** — commande `hashcat <hash>` / `hashcat --list` en JS pur, contre
       une wordlist embarquée. Utilise un algorithme maison fictif ("hash-VX", pas un vrai MD5/SHA1)
       pour rester clairement pédagogique — intégré au défi Jeopardy "Mot de passe recyclé"

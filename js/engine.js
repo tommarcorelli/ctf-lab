@@ -66,6 +66,8 @@ function sanitizeGameState(data) {
   if (!data.reverse || typeof data.reverse !== "object") data.reverse = { solved: {}, answered: {} }; // migration v8 -> reverse engineering
   if (!data.reverse.solved || typeof data.reverse.solved !== "object") data.reverse.solved = {};
   if (!data.reverse.answered || typeof data.reverse.answered !== "object") data.reverse.answered = {};
+  if (!data.stackpwn || typeof data.stackpwn !== "object") data.stackpwn = { solved: false }; // migration v9 -> défi buffer overflow
+  if (typeof data.stackpwn.solved !== "boolean") data.stackpwn.solved = false;
   data.saveVersion = SAVE_VERSION;
   return data;
 }
@@ -74,7 +76,7 @@ function loadSave() {
     const raw = localStorage.getItem(SAVE_KEY);
     if (raw) return sanitizeGameState(JSON.parse(raw));
   } catch (e) {}
-  return sanitizeGameState({ score: 0, unlocked: [MACHINES[0].id], progress: {}, hintsUsed: {}, times: {}, badges: {}, bestTimes: {}, jeopardy: { solved: {}, hintsUsed: {} }, blueteam: { solved: {}, answered: {}, hintsUsed: {} }, firewall: { solved: {} }, phishing: { solved: {}, answered: {} }, reverse: { solved: {}, answered: {} }, insaneMode: false });
+  return sanitizeGameState({ score: 0, unlocked: [MACHINES[0].id], progress: {}, hintsUsed: {}, times: {}, badges: {}, bestTimes: {}, jeopardy: { solved: {}, hintsUsed: {} }, blueteam: { solved: {}, answered: {}, hintsUsed: {} }, firewall: { solved: {} }, phishing: { solved: {}, answered: {} }, reverse: { solved: {}, answered: {} }, stackpwn: { solved: false }, insaneMode: false });
 }
 function persistSave() {
   localStorage.setItem(SAVE_KEY, JSON.stringify(GAME));
@@ -595,7 +597,7 @@ const KNOWN_COMMANDS = [
   "dir", "type", "net", "schtasks", "icacls", "vim", "nc", "arp", "cloudctl", "generate", "replay", "sandbox",
   "blueteam", "incident", "answer", "bthint", "firewall", "iptables",
   "phishing", "inbox", "mail", "report", "phhint",
-  "malware", "re", "strings", "disas", "disasm", "resolve", "rehint", "graph",
+  "malware", "re", "strings", "disas", "disasm", "resolve", "rehint", "graph", "stack",
 ];
 const PATH_COMMANDS = ["cd", "ls", "cat", "find", "dir", "type", "icacls", "vim"];
 
@@ -847,6 +849,14 @@ const BADGE_DEFS = [
     desc: "Analyse tous les binaires du chapitre reverse engineering.",
     scope: "global",
     check: () => MALWARE_SAMPLES.every((s) => GAME.reverse.solved[s.id]),
+  },
+  {
+    id: "stackpwn_complete",
+    icon: "🧠",
+    label: "Exploiteur (pédagogique)",
+    desc: "Détourne l'adresse de retour dans le défi buffer overflow.",
+    scope: "global",
+    check: () => !!GAME.stackpwn.solved,
   },
 ];
 function checkGlobalBadges() {
@@ -1728,6 +1738,74 @@ function buildAttackGraphSVG(machine, progress) {
   );
 }
 
+// ── Visualiseur de pile : défi buffer overflow 100% simulé (aucun code réel) ─
+// Modèle : char buf[16] ; RBP sauvé (8 o) ; adresse de retour (8 o). Un payload de
+// `fill` octets de bourrage suivi d'une adresse écrase la pile vers les adresses hautes.
+// Écraser l'adresse de retour (offset 24) par l'adresse de win() détourne le flux.
+const STACK_CHALLENGE = { buf: 16, rbp: 8, ret: 8, win: "0x401156", winFn: "win", origRet: "0x401080" };
+function stackOffsetToRet() { return STACK_CHALLENGE.buf + STACK_CHALLENGE.rbp; } // 24
+function normAddr(a) {
+  a = String(a || "").trim().toLowerCase();
+  if (!a) return "";
+  if (!/^0x[0-9a-f]+$/.test(a)) a = "0x" + a.replace(/^0x/, "");
+  return /^0x[0-9a-f]+$/.test(a) ? a : "";
+}
+function stackEval(fill, retHex) {
+  fill = Math.max(0, Math.floor(Number(fill) || 0));
+  const addr = normAddr(retHex);
+  const off = stackOffsetToRet();
+  let status, msg, win = false;
+  if (!addr) {
+    if (fill < STACK_CHALLENGE.buf) { status = "safe"; msg = "Le payload tient dans le buffer (≤ 16 o) — aucun débordement."; }
+    else if (fill < off) { status = "rbp"; msg = "Le bourrage déborde dans le RBP sauvé — la fonction planterait (SIGSEGV), mais tu ne contrôles pas encore l'adresse de retour."; }
+    else { status = "ret-nofill"; msg = `Le bourrage atteint la zone de l'adresse de retour (offset ${off}) mais n'y écrit aucune adresse — ajoute une adresse cible.`; }
+  } else if (fill < off) {
+    status = "early"; msg = `L'adresse tombe à l'offset ${fill} : trop tôt, elle n'écrase pas les 8 octets de l'adresse de retour (offset ${off}). Ajoute du bourrage.`;
+  } else if (fill > off) {
+    status = "late"; msg = `Offset ${fill} > ${off} : l'adresse déborde au-delà de l'adresse de retour (mal aligné).`;
+  } else if (addr === STACK_CHALLENGE.win) {
+    status = "win"; win = true; msg = `🎯 Adresse de retour écrasée par ${STACK_CHALLENGE.win} (${STACK_CHALLENGE.winFn}()) — flux d'exécution détourné. Exploitation réussie (pédagogique, aucun code réel exécuté).`;
+  } else {
+    status = "ret-wrong"; msg = `Tu écrases bien l'adresse de retour (offset ${off}) mais avec ${addr}, pas l'adresse de win() (${STACK_CHALLENGE.win}).`;
+  }
+  return { fill, addr, status, msg, win, offsetToRet: off };
+}
+function attemptStack(fill, retHex) {
+  const r = stackEval(fill, retHex);
+  if (r.win && !GAME.stackpwn.solved) {
+    GAME.stackpwn.solved = true;
+    addScore(200);
+    toast("🧠 Buffer overflow résolu — adresse de retour détournée (+200 pts)");
+    if (typeof playFlagSound === "function") playFlagSound();
+    if (typeof spawnFlagParticles === "function") spawnFlagParticles();
+    checkGlobalBadges();
+    persistSave();
+    if (typeof renderSidebar === "function") renderSidebar();
+  }
+  return r;
+}
+function buildStackSVG(fill, retHex) {
+  const r = stackEval(fill, retHex);
+  const off = stackOffsetToRet();
+  const bufFilled = r.fill > 0;
+  const rbpFilled = r.fill > STACK_CHALLENGE.buf;
+  let retCls = "";
+  if (r.status === "win") retCls = " hijack";
+  else if (r.status === "ret-wrong" || (r.addr && r.fill >= off)) retCls = " crash";
+  const retSub = r.status === "win" ? `détournée → ${STACK_CHALLENGE.win}`
+    : (r.addr && r.fill === off) ? `écrasée : ${r.addr}` : `${STACK_CHALLENGE.origRet} (intacte)`;
+  const slot = (y, cls, title, sub) => `<g class="sk-slot${cls}"><rect x="70" y="${y}" width="280" height="60" rx="6"/><text class="sk-t" x="210" y="${y + 26}">${agEsc(title)}</text><text class="sk-s" x="210" y="${y + 45}">${agEsc(sub)}</text></g>`;
+  return `<svg class="stack-viz" viewBox="0 0 420 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Schéma de la pile">`
+    + `<text class="sk-axis" x="210" y="16">▲ adresses hautes</text>`
+    + slot(26, retCls, "adresse de retour (8 o)", retSub)
+    + slot(102, rbpFilled ? " fill" : "", "RBP sauvé (8 o)", rbpFilled ? "écrasé (AAAA…)" : "intact")
+    + slot(178, bufFilled ? " fill" : "", "char buf[16]", bufFilled ? `${Math.min(r.fill, 16)}/16 octets écrits` : "vide")
+    + `<text class="sk-axis" x="210" y="258">▼ adresses basses — le débordement remonte</text>`
+    + `<text class="sk-info" x="210" y="284">offset du bourrage : ${r.fill} · cible = offset ${off}</text>`
+    + `<text class="sk-verdict${r.win ? " win" : ""}" x="210" y="308">${r.win ? "🎯 RET détournée vers win()" : (r.addr && r.fill === off ? "RET écrasée (mauvaise adresse)" : "RET non contrôlée")}</text>`
+    + `</svg>`;
+}
+
 // ── Détection & capture de flags dans une sortie ─────────────────────────────
 function scanForFlags(machine, text) {
   if (!machine) return;
@@ -2165,7 +2243,7 @@ function cmdHelp() {
     "Filtres en pipe : grep, wc -l, sort [-u], head, tail, cut, awk '{print $N}'\n" +
     "Shell : variables $USER/$HOME/$PWD/$HOSTNAME/$UID/$? (${VAR} aussi), substitution $(commande), redirections > >> 2> &> 2>/dev/null\n" +
     "Bac à sable : generate [seed] (machine aléatoire jouable), sandbox (FS libre pour s'entraîner, bouton 🧪), éditeur de machines (🛠️), replay (rejoue ta session, ▶️)\n" +
-    "Visualisation : graph [machine] (graphe d'attaque, bouton 🗺️)"
+    "Visualisation : graph [machine] (graphe d'attaque, bouton 🗺️), stack (défi buffer overflow schématisé, bouton 🧠)"
   );
 }
 

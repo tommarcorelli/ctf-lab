@@ -356,6 +356,31 @@ function shareEditorLink() {
     );
   } else { show(); }
 }
+// ── Visualiseur de pile / buffer overflow (modale SVG) ───────────────────────
+function renderStack(evalResult) {
+  const fill = parseInt(document.getElementById("stack-fill").value, 10) || 0;
+  const addr = document.getElementById("stack-addr").value;
+  document.getElementById("stack-viz").innerHTML = buildStackSVG(fill, addr);
+  if (evalResult) {
+    const el = document.getElementById("stack-verdict");
+    el.className = "editor-msg " + (evalResult.win ? "ok" : (evalResult.status === "safe" ? "" : "err"));
+    el.textContent = evalResult.msg;
+  }
+}
+function injectStack() {
+  const fill = parseInt(document.getElementById("stack-fill").value, 10) || 0;
+  const addr = document.getElementById("stack-addr").value;
+  const r = attemptStack(fill, addr);
+  renderStack(r);
+  updateStatus();
+}
+function openStack() {
+  document.getElementById("stack-viz").innerHTML = buildStackSVG(parseInt(document.getElementById("stack-fill").value, 10) || 0, document.getElementById("stack-addr").value);
+  document.getElementById("stack-verdict").textContent = "";
+  document.getElementById("stack-modal").classList.remove("hidden");
+}
+function closeStack() { document.getElementById("stack-modal").classList.add("hidden"); }
+
 // ── Attack graph (modale SVG) ────────────────────────────────────────────────
 function renderGraph() {
   const id = document.getElementById("graph-select").value;
@@ -769,6 +794,12 @@ function submitInput() {
     updatePromptLabel();
     return;
   }
+  if (firstWord === "stack") {
+    openStack();
+    printLine("🧠 Défi buffer overflow ouvert : ajuste le bourrage et l'adresse de retour, puis « Injecter ».", "t-hint");
+    updatePromptLabel();
+    return;
+  }
 
   const res = runCommand(val);
   if (res) {
@@ -960,6 +991,14 @@ function boot() {
   document.getElementById("graph-select").addEventListener("change", renderGraph);
   document.getElementById("graph-modal").addEventListener("click", (e) => { if (e.target.id === "graph-modal") closeGraph(); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !document.getElementById("graph-modal").classList.contains("hidden")) closeGraph(); });
+
+  document.getElementById("stack-toggle").addEventListener("click", openStack);
+  document.getElementById("stack-close").addEventListener("click", closeStack);
+  document.getElementById("stack-inject").addEventListener("click", injectStack);
+  document.getElementById("stack-fill").addEventListener("input", () => renderStack());
+  document.getElementById("stack-addr").addEventListener("input", () => renderStack());
+  document.getElementById("stack-modal").addEventListener("click", (e) => { if (e.target.id === "stack-modal") closeStack(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !document.getElementById("stack-modal").classList.contains("hidden")) closeStack(); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !document.getElementById("sandbox-modal").classList.contains("hidden")) closeSandboxEditor(); });
 
   if (location.hash === "#editor") openEditor();

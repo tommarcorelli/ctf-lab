@@ -1073,6 +1073,39 @@ section("Attack graph : rendu SVG du chemin d'attaque", () => {
   assert(/groupe docker/.test(full), "le label de privesc reflète la technique de la machine (docker pour AXIOM)");
 });
 
+// ── 26. Visualiseur de pile : défi buffer overflow simulé ────────────────────
+section("Buffer overflow simulé : stackEval / attemptStack / SVG", () => {
+  const ctx = freshContext();
+
+  // Payload court : tient dans le buffer, pas de débordement
+  assertEqual(get(ctx, "stackEval(8, '').status"), "safe", "8 octets < 16 -> pas de débordement");
+  // Déborde dans le RBP sauvé mais pas jusqu'à RET
+  assertEqual(get(ctx, "stackEval(20, '').status"), "rbp", "20 octets écrasent le RBP mais pas encore RET");
+  // Adresse trop tôt (offset < 24)
+  assertEqual(get(ctx, "stackEval(16, '0x401156').status"), "early", "adresse à l'offset 16 -> trop tôt");
+  // Bon offset mais mauvaise adresse
+  assertEqual(get(ctx, "stackEval(24, '0x400000').status"), "ret-wrong", "offset 24 mais mauvaise adresse -> ret-wrong");
+  // Bon offset + bonne adresse -> victoire (accepte aussi sans le 0x)
+  assert(get(ctx, "stackEval(24, '401156').win"), "offset 24 + adresse de win (sans 0x) -> victoire");
+
+  // Scoring : attemptStack crédite une fois
+  const before = get(ctx, "GAME.score");
+  const r = get(ctx, "attemptStack(24, '0x401156')");
+  assert(r.win, "attemptStack signale la victoire");
+  assertEqual(get(ctx, "GAME.stackpwn.solved"), true, "le défi est marqué résolu");
+  assertEqual(get(ctx, "GAME.score"), before + 200, "la victoire crédite 200 pts");
+  assertEqual(get(ctx, "GAME.badges.stackpwn_complete"), true, "badge Exploiteur (pédagogique) débloqué");
+  get(ctx, "attemptStack(24, '0x401156')");
+  assertEqual(get(ctx, "GAME.score"), before + 200, "rejouer ne recrédite pas les points");
+
+  // SVG : structure + classe hijack sur RET à la victoire
+  const svg = get(ctx, "buildStackSVG(24, '0x401156')");
+  assert(/<svg[\s\S]*<\/svg>/.test(svg) && /char buf\[16\]/.test(svg) && /adresse de retour/.test(svg), "le SVG contient les 3 zones de la pile");
+  assert(/sk-slot hijack/.test(svg), "à la victoire, la zone RET porte la classe hijack");
+  const svg0 = get(ctx, "buildStackSVG(0, '')");
+  assert(!/hijack/.test(svg0) && !/sk-slot fill/.test(svg0), "sans payload, aucune zone n'est allumée");
+});
+
 // ── Rapport final ─────────────────────────────────────────────────────────────
 Promise.all(pendingAsync).then(() => {
   console.log(`\n${"─".repeat(60)}`);

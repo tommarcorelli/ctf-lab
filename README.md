@@ -100,6 +100,16 @@ aux espaces, plusieurs formulations acceptées), `bthint <id> <question>` donne 
 incident entièrement résolu rapporte des points ; les résoudre tous débloque le badge **🛡️ Analyste
 SOC**. Tout est généré en dur (aucun IDS ni backend).
 
+## Buffer overflow (pédagogique)
+
+La commande **`stack`** (ou le bouton **🧠**) ouvre un défi **buffer overflow 100 % simulé** : un
+schéma SVG de la pile (`char buf[16]` → RBP sauvé → adresse de retour). Tu ajustes le nombre d'octets
+de **bourrage** et l'**adresse de retour**, et les blocs se colorent en temps réel (ambre = écrasé
+par le bourrage, rouge = mauvaise adresse sur la RET, **vert = adresse de retour détournée vers
+`win()`** — offset 24, `0x401156`). Réussir crédite des points et débloque le badge **🧠 Exploiteur
+(pédagogique)**. **Aucun code réel n'est exécuté** : c'est un support visuel, pas d'exploitation
+binaire réelle.
+
 ## Graphe d'attaque
 
 La commande **`graph [machine]`** (ou le bouton **🗺️**) ouvre une modale qui affiche le **graphe
