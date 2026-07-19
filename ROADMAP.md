@@ -313,9 +313,12 @@ reverse shell manuel sur MERIDIAN, `validateMachines` en garde-fou de schéma) :
       résolution des 2 échantillons, score, badge) et vérifié au rendu.
 - [ ] **Terminal multi-panes façon tmux** — split horizontal/vertical simulé au sein d'un même
       onglet (un pane shell, un pane logs qui défile) pour les machines plus avancées
-- [ ] **Mode "fantôme" sur le replay** — en s'appuyant sur le replay local déjà prévu en Phase 4 :
-      importer le replay d'un run (le sien ou un fichier partagé) et le rejouer en parallèle du
-      run courant façon "ghost" speedrun, sans aucun serveur ni classement en ligne
+- [x] **Mode "fantôme" sur le replay** — dans l'overlay de replay, le bouton **👻 Charger un
+      fantôme** importe un replay `.json` (le sien ou un partagé) ; « Rejouer » lance alors une
+      **course en double colonne** (`playGhostReplay`) : ta session à gauche, le fantôme à droite,
+      les deux avançant étape par étape. Le verdict compare le nombre d'étapes (« Tu es plus
+      rapide » / « Le fantôme est plus rapide »). Purement local, sans serveur ni classement en
+      ligne. Vérifié au rendu (double colonne + verdict).
 - [x] **Hot-seat local** — plusieurs profils de joueur sur le même navigateur, avec des saves
       **séparées par profil** (`profileSaveKey(nom)`, registre `HOTSEAT` dans `localStorage`, avec
       migration de l'ancien format mono-profil vers `joueur1`). **`profile <nom>`** sauvegarde le

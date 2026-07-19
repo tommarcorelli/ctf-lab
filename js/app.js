@@ -835,6 +835,7 @@ function handleReplayCommand(args) {
   playReplay(RECORDING);
 }
 let replayToken = 0;
+let REPLAY_GHOST = null;
 function replayModal() { return document.getElementById("replay-modal"); }
 function openReplay() { replayModal().classList.remove("hidden"); }
 function closeReplay() { replayToken++; replayModal().classList.add("hidden"); }
@@ -847,7 +848,40 @@ function replayPrint(pane, text, cls) {
     pane.appendChild(d);
   });
 }
+function appendReplayStep(el, step) {
+  if ((step.input || "").trim() === "clear") { el.innerHTML = ""; return; }
+  const line = document.createElement("div");
+  line.className = "t-line t-prompt";
+  line.textContent = (step.prompt || "") + " " + (step.input || "");
+  el.appendChild(line);
+  for (const o of (step.out || [])) replayPrint(el, o.text, o.cls);
+}
+async function playGhostReplay(mine, ghost) {
+  const pane = document.getElementById("replay-output");
+  const status = document.getElementById("replay-status");
+  pane.innerHTML = `<div class="replay-dual">`
+    + `<div class="replay-col"><div class="replay-col-h">👤 Toi — ${mine.length} étapes</div><div class="replay-col-body" id="rp-mine"></div></div>`
+    + `<div class="replay-col"><div class="replay-col-h">👻 Fantôme — ${ghost.length} étapes</div><div class="replay-col-body" id="rp-ghost"></div></div>`
+    + `</div>`;
+  const token = ++replayToken;
+  const mineEl = document.getElementById("rp-mine"), ghostEl = document.getElementById("rp-ghost");
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  status.textContent = "▶ course fantôme…";
+  const n = Math.max(mine.length, ghost.length);
+  for (let i = 0; i < n; i++) {
+    if (token !== replayToken) return;
+    if (i < mine.length) { appendReplayStep(mineEl, mine[i]); mineEl.scrollTop = mineEl.scrollHeight; }
+    if (i < ghost.length) { appendReplayStep(ghostEl, ghost[i]); ghostEl.scrollTop = ghostEl.scrollHeight; }
+    await sleep(300);
+  }
+  if (token === replayToken) {
+    status.textContent = "■ " + (mine.length === ghost.length ? "Égalité !"
+      : mine.length < ghost.length ? `Tu es plus rapide (${mine.length} vs ${ghost.length} étapes) 🏆`
+        : `Le fantôme est plus rapide (${ghost.length} vs ${mine.length} étapes) 👻`);
+  }
+}
 async function playReplay(steps) {
+  if (REPLAY_GHOST) return playGhostReplay(steps, REPLAY_GHOST);
   const pane = document.getElementById("replay-output");
   const status = document.getElementById("replay-status");
   pane.innerHTML = "";
@@ -873,6 +907,31 @@ async function playReplay(steps) {
     await sleep(320);
   }
   if (token === replayToken) status.textContent = `■ fin du replay (${steps.length} étapes)`;
+}
+function loadGhostFromFile() {
+  const inputFile = document.createElement("input");
+  inputFile.type = "file";
+  inputFile.accept = ".json,application/json";
+  inputFile.style.display = "none";
+  inputFile.addEventListener("change", () => {
+    const file = inputFile.files && inputFile.files[0];
+    document.body.removeChild(inputFile);
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const steps = JSON.parse(reader.result);
+        if (!Array.isArray(steps)) throw new Error("format");
+        REPLAY_GHOST = steps;
+        document.getElementById("replay-status").textContent = `👻 Fantôme chargé (${steps.length} étapes). « Rejouer » lance la course.`;
+      } catch (e) {
+        document.getElementById("replay-status").textContent = "❌ Fichier de fantôme invalide.";
+      }
+    };
+    reader.readAsText(file);
+  });
+  document.body.appendChild(inputFile);
+  inputFile.click();
 }
 function loadReplayFromFile() {
   const inputFile = document.createElement("input");
@@ -977,6 +1036,7 @@ function boot() {
   document.getElementById("replay-play").addEventListener("click", () => playReplay(RECORDING));
   document.getElementById("replay-download").addEventListener("click", () => { if (RECORDING.length) downloadText(`ctf-lab-replay-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(RECORDING), "application/json"); });
   document.getElementById("replay-open").addEventListener("click", loadReplayFromFile);
+  document.getElementById("replay-ghost").addEventListener("click", loadGhostFromFile);
   document.getElementById("replay-modal").addEventListener("click", (e) => { if (e.target.id === "replay-modal") closeReplay(); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !replayModal().classList.contains("hidden")) closeReplay(); });
 
