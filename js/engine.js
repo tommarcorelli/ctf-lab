@@ -58,6 +58,8 @@ function sanitizeGameState(data) {
   if (!data.blueteam.solved || typeof data.blueteam.solved !== "object") data.blueteam.solved = {};
   if (!data.blueteam.answered || typeof data.blueteam.answered !== "object") data.blueteam.answered = {};
   if (!data.blueteam.hintsUsed || typeof data.blueteam.hintsUsed !== "object") data.blueteam.hintsUsed = {};
+  if (!data.firewall || typeof data.firewall !== "object") data.firewall = { solved: {} }; // migration v6 -> pare-feu CLI
+  if (!data.firewall.solved || typeof data.firewall.solved !== "object") data.firewall.solved = {};
   data.saveVersion = SAVE_VERSION;
   return data;
 }
@@ -66,7 +68,7 @@ function loadSave() {
     const raw = localStorage.getItem(SAVE_KEY);
     if (raw) return sanitizeGameState(JSON.parse(raw));
   } catch (e) {}
-  return sanitizeGameState({ score: 0, unlocked: [MACHINES[0].id], progress: {}, hintsUsed: {}, times: {}, badges: {}, bestTimes: {}, jeopardy: { solved: {}, hintsUsed: {} }, blueteam: { solved: {}, answered: {}, hintsUsed: {} }, insaneMode: false });
+  return sanitizeGameState({ score: 0, unlocked: [MACHINES[0].id], progress: {}, hintsUsed: {}, times: {}, badges: {}, bestTimes: {}, jeopardy: { solved: {}, hintsUsed: {} }, blueteam: { solved: {}, answered: {}, hintsUsed: {} }, firewall: { solved: {} }, insaneMode: false });
 }
 function persistSave() {
   localStorage.setItem(SAVE_KEY, JSON.stringify(GAME));
@@ -101,6 +103,7 @@ const SESSION = {
   uploaded: {},          // { machineId: bool } — webshell uploadé sur la machine
   tunnel: null,          // { localPort, targetIp, targetPort } — tunnel ssh -L actif (pivot)
   sandbox: false,        // true en mode bac à sable libre (FS custom, sans flag ni score)
+  firewall: null,        // { id, policy, rules } — scénario de pare-feu en cours, ou null
 };
 
 // Une machine "interne" (machine.internal) n'est routable qu'à travers un tunnel ssh -L
@@ -584,7 +587,7 @@ const KNOWN_COMMANDS = [
   "whoami", "id", "groups", "pwd", "ls", "cd", "cat", "find", "echo", "nmap", "curl",
   "ftp", "ssh", "sudo", "crontab", "exit", "man", "docker", "export", "import",
   "dir", "type", "net", "schtasks", "icacls", "vim", "nc", "cloudctl", "generate", "replay", "sandbox",
-  "blueteam", "incident", "answer", "bthint",
+  "blueteam", "incident", "answer", "bthint", "firewall", "iptables",
 ];
 const PATH_COMMANDS = ["cd", "ls", "cat", "find", "dir", "type", "icacls", "vim"];
 
@@ -812,6 +815,14 @@ const BADGE_DEFS = [
     desc: "Résous tous les incidents du mode Blue Team.",
     scope: "global",
     check: () => BLUE_INCIDENTS.every((i) => GAME.blueteam.solved[i.id]),
+  },
+  {
+    id: "firewall_complete",
+    icon: "🧱",
+    label: "Ingénieur réseau",
+    desc: "Résous tous les scénarios de pare-feu.",
+    scope: "global",
+    check: () => FIREWALL_SCENARIOS.every((s) => GAME.firewall.solved[s.id]),
   },
 ];
 function checkGlobalBadges() {
@@ -1242,6 +1253,183 @@ function cmdAnswer(args) {
   return out(`✅ Dernière réponse correcte — incident « ${inc.title} » résolu ! +${inc.points} pts.`, "t-ok");
 }
 
+// ── Pare-feu simulé en CLI (iptables-like) : lire/modifier des règles ────────
+// Modèle simplifié : règles par chaîne évaluées de haut en bas, 1re correspondance
+// décide ; sinon la policy par défaut de la chaîne s'applique. Aucun vrai réseau.
+const FIREWALL_SCENARIOS = [
+  {
+    id: "fw-harden", title: "Durcir le pare-feu du serveur web", points: 200,
+    brief: "Le serveur laisse tout passer (policy INPUT ACCEPT). Objectif : n'autoriser que le web (80/443) depuis n'importe où, garder SSH (22) uniquement depuis le LAN 10.0.0.0/8, et fermer le reste (dont Telnet 23).",
+    policy: { INPUT: "ACCEPT", OUTPUT: "ACCEPT", FORWARD: "ACCEPT" },
+    rules: [],
+    goals: [
+      { type: "open", proto: "tcp", dport: 80, source: "198.51.100.9", label: "HTTP (80/tcp) ouvert depuis l'extérieur" },
+      { type: "open", proto: "tcp", dport: 443, source: "198.51.100.9", label: "HTTPS (443/tcp) ouvert depuis l'extérieur" },
+      { type: "open", proto: "tcp", dport: 22, source: "10.0.0.5", label: "SSH (22/tcp) ouvert depuis le LAN 10.0.0.0/8" },
+      { type: "closed", proto: "tcp", dport: 22, source: "203.0.113.9", label: "SSH (22/tcp) fermé depuis l'extérieur" },
+      { type: "closed", proto: "tcp", dport: 23, source: "203.0.113.9", label: "Telnet (23/tcp) fermé" },
+    ],
+  },
+  {
+    id: "fw-block", title: "Bloquer un attaquant sans couper le web", points: 200,
+    brief: "L'hôte 203.0.113.66 martèle le serveur. Bloque-le totalement — y compris sur le port 80 — sans couper le trafic web légitime des autres. (Attention à l'ordre des règles : la 1re qui correspond gagne.)",
+    policy: { INPUT: "ACCEPT", OUTPUT: "ACCEPT", FORWARD: "ACCEPT" },
+    rules: [{ chain: "INPUT", source: "any", proto: "tcp", dport: 80, target: "ACCEPT" }],
+    goals: [
+      { type: "blocked", proto: "tcp", dport: 80, source: "203.0.113.66", label: "203.0.113.66 bloqué (même sur le port 80)" },
+      { type: "open", proto: "tcp", dport: 80, source: "198.51.100.10", label: "HTTP (80/tcp) toujours ouvert pour les autres" },
+    ],
+  },
+];
+function ipToInt(ip) {
+  const p = String(ip).split(".").map(Number);
+  if (p.length !== 4 || p.some((n) => isNaN(n) || n < 0 || n > 255)) return null;
+  return ((p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3]) >>> 0;
+}
+function ipInRange(ip, range) {
+  if (range === "any" || range === "0.0.0.0/0") return true;
+  if (String(range).includes("/")) {
+    const [base, bitsRaw] = range.split("/");
+    const bits = Number(bitsRaw);
+    const bi = ipToInt(base), ii = ipToInt(ip);
+    if (bi == null || ii == null) return false;
+    const mask = bits <= 0 ? 0 : (0xFFFFFFFF << (32 - bits)) >>> 0;
+    return (ii & mask) === (bi & mask);
+  }
+  return ip === range;
+}
+function fwMatch(rule, pkt) {
+  return (rule.source === "any" || ipInRange(pkt.src, rule.source))
+    && (rule.proto === "all" || rule.proto === pkt.proto)
+    && (rule.dport == null || rule.dport === pkt.dport);
+}
+function fwEval(fw, pkt) {
+  for (const r of fw.rules) {
+    if (r.chain !== pkt.chain) continue;
+    if (fwMatch(r, pkt)) return r.target;
+  }
+  return fw.policy[pkt.chain] || "ACCEPT";
+}
+function fwGoalMet(fw, g) {
+  const pkt = { chain: "INPUT", src: g.source, proto: g.proto || "tcp", dport: g.dport };
+  const verdict = fwEval(fw, pkt);
+  if (g.type === "open") return verdict === "ACCEPT";
+  return verdict === "DROP"; // "closed" et "blocked"
+}
+function fwScenario(id) { return FIREWALL_SCENARIOS.find((s) => s.id === id); }
+function fwStartState(scen) {
+  return { id: scen.id, policy: Object.assign({}, scen.policy), rules: scen.rules.map((r) => Object.assign({}, r)) };
+}
+function renderFirewall(fw) {
+  const scen = fwScenario(fw.id);
+  const lines = [];
+  const chains = ["INPUT", "OUTPUT", "FORWARD"].filter((ch) => ch === "INPUT" || fw.rules.some((r) => r.chain === ch));
+  for (const ch of chains) {
+    lines.push(`Chain ${ch} (policy ${fw.policy[ch]})`);
+    lines.push(`  num  target  prot  source            dport`);
+    const rs = fw.rules.filter((r) => r.chain === ch);
+    if (!rs.length) lines.push("  (aucune règle)");
+    rs.forEach((r, i) => {
+      lines.push(`  ${String(i + 1).padEnd(4)} ${r.target.padEnd(7)} ${r.proto.padEnd(5)} ${String(r.source).padEnd(17)} ${r.dport == null ? "*" : r.dport}`);
+    });
+  }
+  lines.push("");
+  lines.push("Objectifs :");
+  scen.goals.forEach((g) => lines.push(`  ${fwGoalMet(fw, g) ? "✅" : "❌"} ${g.label}`));
+  return lines.join("\n");
+}
+function cmdFirewall(args) {
+  const sub = (args[0] || "").toLowerCase();
+  if (!sub) {
+    const lines = ["🧱 Pare-feu simulé — scénarios (lecture/écriture de règles iptables) :", ""];
+    FIREWALL_SCENARIOS.forEach((s) => lines.push(`${GAME.firewall.solved[s.id] ? "✅" : "🧱"} ${s.id.padEnd(10)} ${String(s.points).padStart(3)} pts  ${s.title}`));
+    lines.push("");
+    lines.push("Démarre : `firewall <id>`. Puis modifie avec `iptables ...`. `firewall reset` recharge, `firewall exit` quitte.");
+    return out(lines.join("\n"));
+  }
+  if (sub === "exit" || sub === "quit") { SESSION.firewall = null; return out("Mode pare-feu quitté."); }
+  if (sub === "reset") {
+    if (!SESSION.firewall) return out("Aucun scénario de pare-feu en cours.", "t-err");
+    SESSION.firewall = fwStartState(fwScenario(SESSION.firewall.id));
+    return out("Règles réinitialisées.\n\n" + renderFirewall(SESSION.firewall));
+  }
+  const scen = fwScenario(sub);
+  if (!scen) return out("Scénario inconnu. Tape `firewall` pour la liste.", "t-err");
+  SESSION.firewall = fwStartState(scen);
+  return out(`━━ ${scen.title} [${scen.points} pts]${GAME.firewall.solved[scen.id] ? " — résolu ✅" : ""} ━━\n\n${scen.brief}\n\n` + renderFirewall(SESSION.firewall) + "\n\nModifie avec `iptables -A/-I/-D/-P/-F ...`, puis vise tous les ✅.");
+}
+function parseIptables(args) {
+  if (args.includes("-L") || args.includes("--list")) return { op: "list" };
+  if (args.includes("-F") || args.includes("--flush")) return { op: "flush" };
+  const pIdx = args.indexOf("-P");
+  if (pIdx >= 0) return { op: "policy", chain: (args[pIdx + 1] || "").toUpperCase(), policy: (args[pIdx + 2] || "").toUpperCase() };
+  const dIdx = args.indexOf("-D");
+  if (dIdx >= 0) return { op: "delete", chain: (args[dIdx + 1] || "").toUpperCase(), index: parseInt(args[dIdx + 2], 10) };
+  const aIdx = args.indexOf("-A"), iIdx = args.indexOf("-I");
+  if (aIdx >= 0 || iIdx >= 0) {
+    const base = aIdx >= 0 ? aIdx : iIdx;
+    const chain = (args[base + 1] || "").toUpperCase();
+    let pos = null;
+    if (iIdx >= 0) { const maybe = args[iIdx + 2]; pos = /^\d+$/.test(maybe || "") ? parseInt(maybe, 10) : 1; }
+    const rule = { chain, source: "any", proto: "all", dport: null, target: "ACCEPT" };
+    const sIdx = args.findIndex((a) => a === "-s" || a === "--source");
+    if (sIdx >= 0) rule.source = args[sIdx + 1];
+    const prIdx = args.indexOf("-p");
+    if (prIdx >= 0) rule.proto = (args[prIdx + 1] || "all").toLowerCase();
+    const dpIdx = args.indexOf("--dport");
+    if (dpIdx >= 0) rule.dport = parseInt(args[dpIdx + 1], 10);
+    const jIdx = args.indexOf("-j");
+    if (jIdx >= 0) rule.target = (args[jIdx + 1] || "ACCEPT").toUpperCase();
+    return { op: iIdx >= 0 ? "insert" : "append", rule, pos };
+  }
+  return null;
+}
+function cmdIptables(args) {
+  if (!SESSION.firewall) return out("iptables : démarre d'abord un scénario avec `firewall <id>` (mode pare-feu).", "t-err");
+  const fw = SESSION.firewall;
+  const cmd = parseIptables(args);
+  if (!cmd) return out("iptables : commande non reconnue. Ex : `iptables -A INPUT -p tcp --dport 80 -j ACCEPT`, `iptables -P INPUT DROP`, `iptables -L`.", "t-err");
+  const VALID_CHAINS = ["INPUT", "OUTPUT", "FORWARD"];
+  if (cmd.op === "list") return out(renderFirewall(fw));
+  if (cmd.op === "flush") { fw.rules = []; }
+  else if (cmd.op === "policy") {
+    if (!VALID_CHAINS.includes(cmd.chain)) return out(`iptables : chaîne inconnue « ${cmd.chain} ».`, "t-err");
+    if (!["ACCEPT", "DROP"].includes(cmd.policy)) return out("iptables : policy attendue ACCEPT ou DROP.", "t-err");
+    fw.policy[cmd.chain] = cmd.policy;
+  } else if (cmd.op === "delete") {
+    const rs = fw.rules.filter((r) => r.chain === cmd.chain);
+    if (!(cmd.index >= 1 && cmd.index <= rs.length)) return out(`iptables : règle #${cmd.index} inexistante dans ${cmd.chain}.`, "t-err");
+    const target = rs[cmd.index - 1];
+    fw.rules.splice(fw.rules.indexOf(target), 1);
+  } else { // append / insert
+    if (!VALID_CHAINS.includes(cmd.rule.chain)) return out(`iptables : chaîne inconnue « ${cmd.rule.chain} ».`, "t-err");
+    if (!["ACCEPT", "DROP"].includes(cmd.rule.target)) return out("iptables : cible (-j) attendue ACCEPT ou DROP.", "t-err");
+    if (cmd.op === "insert") {
+      const chainRules = fw.rules.filter((r) => r.chain === cmd.rule.chain);
+      const anchor = chainRules[(cmd.pos || 1) - 1];
+      const at = anchor ? fw.rules.indexOf(anchor) : fw.rules.length;
+      fw.rules.splice(at, 0, cmd.rule);
+    } else {
+      fw.rules.push(cmd.rule);
+    }
+  }
+  // Vérifie les objectifs après toute modification
+  const scen = fwScenario(fw.id);
+  const allMet = scen.goals.every((g) => fwGoalMet(fw, g));
+  let footer = "";
+  if (allMet && !GAME.firewall.solved[fw.id]) {
+    GAME.firewall.solved[fw.id] = true;
+    addScore(scen.points);
+    toast(`🧱 Scénario pare-feu résolu : ${scen.title} (+${scen.points} pts)`);
+    if (typeof playFlagSound === "function") playFlagSound();
+    checkGlobalBadges();
+    persistSave();
+    if (typeof renderSidebar === "function") renderSidebar();
+    footer = `\n\n✅ Tous les objectifs atteints — scénario résolu ! +${scen.points} pts. \`firewall exit\` pour quitter.`;
+  }
+  return out(renderFirewall(fw) + footer, allMet ? "t-ok" : "t-out");
+}
+
 // ── Détection & capture de flags dans une sortie ─────────────────────────────
 function scanForFlags(machine, text) {
   if (!machine) return;
@@ -1624,6 +1812,8 @@ function dispatch(cmd, args, rawFirst) {
     case "incident": return cmdIncident(args);
     case "answer": return cmdAnswer(args);
     case "bthint": return cmdBthint(args);
+    case "firewall": return cmdFirewall(args);
+    case "iptables": return cmdIptables(args);
     default: {
       if (SESSION.ctx !== "attacker") {
         const machine = getMachine(SESSION.ctx);
@@ -1654,6 +1844,7 @@ function cmdHelp() {
     "Commandes générales : help, clear, machines, use <nom>, reset <nom>, hint, insane [on|off], progress, badges, records, writeup <nom>, export <passphrase>, import, score, exit\n" +
     "Mode Jeopardy : challenges, challenge <id>, chint <id>, submit <id> <flag>, hashcat <hash>, daily\n" +
     "Mode Blue Team : blueteam, incident <id>, answer <id> <question> <valeur>, bthint <id> <question>\n" +
+    "Pare-feu : firewall [<id>|reset|exit], iptables -L | -A/-I/-D INPUT ... | -P INPUT ACCEPT|DROP | -F\n" +
     "Reconnaissance : nmap <ip>, curl <url>, ftp <ip>, nc <ip> <port>, cloudctl ls|get|cp\n" +
     "Accès : ssh <user>@<ip> [-p <port>], curl -F \"file=@<webshell>\" <url> (upload), ssh -L <lport>:<hôte_interne>:<port> <user>@<pivot> (tunnel/pivot)\n" +
     "Système (une fois connecté ou en local) : ls [-la], cd, pwd, cat, find, echo, vim <fichier>, whoami, id, sudo -l, sudo <cmd>, crontab -l, docker ps\n" +

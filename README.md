@@ -99,6 +99,17 @@ aux espaces, plusieurs formulations acceptées), `bthint <id> <question>` donne 
 incident entièrement résolu rapporte des points ; les résoudre tous débloque le badge **🛡️ Analyste
 SOC**. Tout est généré en dur (aucun IDS ni backend).
 
+## Pare-feu simulé (iptables)
+
+Deux scénarios défensifs où tu lis et modifies un jeu de règles façon `iptables` pour atteindre des
+objectifs (durcir le serveur : n'ouvrir que 80/443 + SSH depuis le LAN ; bloquer un attaquant sans
+couper le trafic web). `firewall` liste les scénarios, `firewall <id>` en démarre un (affiche les
+règles + une checklist d'objectifs), puis tu joues avec `iptables -L`, `-A`/`-I`/`-D`, `-P INPUT
+ACCEPT|DROP`, `-F`. Les objectifs se cochent en direct ; tout valider rapporte des points et, les
+deux scénarios résolus, le badge **🧱 Ingénieur réseau**. Le 2ᵉ scénario enseigne l'importance de
+l'**ordre des règles** (première correspondance gagne — il faut *insérer* le DROP avant la règle
+ACCEPT). Moteur de règles maison (matching IP/CIDR, proto, port), aucun vrai pare-feu.
+
 ## Accessibilité & hors-ligne
 
 Le bouton de thème (🌙/☀️/◐) propose désormais un 3ᵉ thème **contraste élevé**. Le terminal utilise

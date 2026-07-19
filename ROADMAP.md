@@ -335,9 +335,16 @@ future revue si tu valides le principe.
 
 ## 🎆 Phase 7 — Encore plus loin (vague 3)
 
-- [ ] **Firewall simulé en CLI** — un faux `iptables -L` / règles pfSense-like à lire et
-      modifier en ligne de commande sur une machine réseau avancée (bloquer un port, ajouter
-      une règle NAT simulée) — purement textuel, aucun vrai pare-feu ni service réseau
+- [x] **Firewall simulé en CLI** — 2 scénarios (`FIREWALL_SCENARIOS`) où l'on lit et modifie un
+      jeu de règles façon `iptables` pour atteindre des objectifs (durcir : n'ouvrir que 80/443 +
+      SSH LAN-only ; bloquer un attaquant sans couper le web). Moteur de règles maison (évaluation
+      1re-correspondance-gagne + policy par défaut, matching IP/CIDR, proto, port) : `firewall`
+      (liste), `firewall <id>` (démarre + affiche règles + checklist d'objectifs), `iptables -L`,
+      `-A`/`-I`/`-D`, `-P <chaîne> ACCEPT|DROP`, `-F`. Les objectifs se cochent en direct ; tout
+      valider résout le scénario (points + badge **🧱 Ingénieur réseau**). Le 2ᵉ scénario enseigne
+      l'**ordre des règles** (il faut `-I` pour insérer le DROP avant la règle ACCEPT). Purement
+      textuel, aucun vrai pare-feu. Testé dans `tests/run.js` (résolution des 2 scénarios, leçon
+      d'ordre, score, badge, garde hors-scénario) et vérifié au rendu.
 - [x] **Fiche CVE/CVSS pédagogique** — à chaque flag root capturé, une petite fiche
       récapitulative façon CVE fictive s'affiche dans le terminal (CVE générée localement,
       score/vecteur CVSS mappés au type de privesc de la machine)

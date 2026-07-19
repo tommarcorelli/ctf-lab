@@ -918,6 +918,43 @@ section("Mode Blue Team : analyse de logs", () => {
   assertEqual(get(ctx, "GAME.score"), scoreNow, "un incident déjà résolu ne recrédite pas de points");
 });
 
+// ── 21. Pare-feu simulé (iptables-like) ──────────────────────────────────────
+section("Pare-feu simulé : iptables (lecture/écriture de règles)", () => {
+  const ctx = freshContext();
+  assert(/Pare-feu/.test(run(ctx, "firewall").text), "`firewall` liste les scénarios");
+  assert(run(ctx, "iptables -L").cls === "t-err", "iptables hors scénario -> erreur");
+
+  const scoreBefore = get(ctx, "GAME.score");
+
+  // Scénario 1 : durcissement
+  run(ctx, "firewall fw-harden");
+  run(ctx, "iptables -P INPUT DROP");
+  run(ctx, "iptables -A INPUT -p tcp --dport 80 -j ACCEPT");
+  run(ctx, "iptables -A INPUT -p tcp --dport 443 -j ACCEPT");
+  run(ctx, "iptables -A INPUT -s 10.0.0.0/8 -p tcp --dport 22 -j ACCEPT");
+  assert(get(ctx, "GAME.firewall.solved['fw-harden']"), "fw-harden résolu (web ouvert, SSH LAN-only, reste fermé)");
+
+  // Scénario 2 : la leçon de l'ordre des règles
+  run(ctx, "firewall fw-block");
+  run(ctx, "iptables -A INPUT -s 203.0.113.66 -j DROP");
+  assert(!get(ctx, "GAME.firewall.solved['fw-block']"), "un DROP ajouté APRÈS la règle accept:80 ne bloque pas l'attaquant (1re correspondance gagne)");
+  run(ctx, "firewall reset");
+  run(ctx, "iptables -I INPUT 1 -s 203.0.113.66 -j DROP");
+  assert(get(ctx, "GAME.firewall.solved['fw-block']"), "insérer le DROP en tête bloque l'attaquant sans couper le web");
+
+  assertEqual(get(ctx, "GAME.score"), scoreBefore + 400, "les deux scénarios créditent leurs points");
+  assertEqual(get(ctx, "GAME.badges.firewall_complete"), true, "badge Ingénieur réseau débloqué");
+
+  // Pas de double crédit
+  const now = get(ctx, "GAME.score");
+  run(ctx, "iptables -A INPUT -p tcp --dport 8080 -j ACCEPT");
+  assertEqual(get(ctx, "GAME.score"), now, "un scénario déjà résolu ne recrédite pas");
+
+  // firewall exit
+  run(ctx, "firewall exit");
+  assertEqual(get(ctx, "SESSION.firewall"), null, "`firewall exit` quitte le mode pare-feu");
+});
+
 // ── Rapport final ─────────────────────────────────────────────────────────────
 Promise.all(pendingAsync).then(() => {
   console.log(`\n${"─".repeat(60)}`);
