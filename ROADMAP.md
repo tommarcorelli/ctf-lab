@@ -203,9 +203,16 @@ reverse shell manuel sur MERIDIAN, `validateMachines` en garde-fou de schéma) :
 
 ## 🚀 Phase 4 — Chantiers ambitieux, toujours 100% client / vanilla JS
 
-- [ ] **Éditeur de machines intégré au jeu** — un onglet "Créer une machine" avec un
-      formulaire/textarea JSON édité et testé en live dans le navigateur, sans backend ;
-      export du résultat en fichier `.js` téléchargeable à glisser dans `machines.js`
+- [x] **Éditeur de machines intégré au jeu** — bouton 🛠️ (ou lien `index.html#editor`) qui
+      ouvre une modale « Créer une machine » : un textarea JSON (pré-rempli d'un modèle valide),
+      « Valider & charger » et « Télécharger .json ». Côté moteur, `loadCustomMachine()` compile
+      les regex (chaînes ou `{ __regex__ }`), passe la machine dans `validateMachines`, vérifie
+      l'absence de collision d'id/ip, puis l'injecte dans `MACHINES` (déverrouillée, marquée
+      `custom` → exclue des badges « tour complet »/« perfectionniste », non persistée = bac à
+      sable). La machine est alors **pleinement jouable** dans le vrai terminal (nmap → accès →
+      privesc → flags), et exportable en `.json` à glisser dans `machines.js`. Testé dans
+      `tests/run.js` (JSON invalide, schéma incomplet, collision d'id, chargement valide +
+      exploitation complète) et vérifié au rendu (headless).
 - [ ] **Générateur procédural local** — un algorithme JS pur (pas d'IA externe) qui combine
       aléatoirement des "briques" de vulnérabilités (service, faille d'accès, technique de
       privesc) d'un pool prédéfini pour produire de nouvelles machines jouables à la volée

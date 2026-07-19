@@ -31,6 +31,7 @@
     <button id="ambient-toggle" class="icon-toggle" type="button" title="Ambiance sonore continue (générée, varie selon la difficulté)">🎧</button>
     <button id="voice-toggle" class="icon-toggle" type="button" title="Narration vocale des indices et messages importants">🗣️</button>
     <button id="fx-toggle" class="icon-toggle" type="button" title="Effets visuels (particules, glow)">✨</button>
+    <button id="editor-toggle" class="icon-toggle" type="button" title="Créer une machine (éditeur)">🛠️</button>
   </header>
 
   <main class="layout">
@@ -68,6 +69,28 @@
       </div>
     </section>
   </main>
+
+  <div id="editor-modal" class="editor-modal hidden" role="dialog" aria-modal="true" aria-labelledby="editor-title">
+    <div class="editor-card">
+      <div class="editor-head">
+        <h2 id="editor-title">🛠️ Créer une machine</h2>
+        <button id="editor-close" class="editor-close" type="button" aria-label="Fermer l'éditeur">✕</button>
+      </div>
+      <p class="editor-desc">
+        Décris une machine en JSON (même schéma que <code>machines.js</code>, regex d'exploit en
+        chaînes). « Valider &amp; charger » la teste dans le vrai moteur et l'ajoute à la liste
+        (bac à sable, non sauvegardée). « Télécharger .json » l'exporte pour l'intégrer à
+        <code>machines.js</code>.
+      </p>
+      <textarea id="editor-json" class="editor-json" spellcheck="false" aria-label="Définition JSON de la machine"></textarea>
+      <div id="editor-msg" class="editor-msg" role="status" aria-live="polite"></div>
+      <div class="editor-actions">
+        <button id="editor-load" class="editor-btn primary" type="button">Valider &amp; charger</button>
+        <button id="editor-download" class="editor-btn" type="button">Télécharger .json</button>
+        <button id="editor-reset" class="editor-btn" type="button">Modèle par défaut</button>
+      </div>
+    </div>
+  </div>
 
   <script src="js/machines.js"></script>
   <script src="js/engine.js"></script>

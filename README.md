@@ -135,6 +135,18 @@ Deux choix assumés : les backslash restent **littéraux** (pas d'échappement b
 chemins Windows des machines cibles (`C:\Scripts\backup.bat`) fonctionnent, et les variables sont
 en **lecture seule** (`export` est déjà la commande de sauvegarde chiffrée, pas une assignation).
 
+## Éditeur de machines intégré
+
+Le bouton 🛠️ de l'en-tête (ou le lien direct `index.html#editor`) ouvre une modale **« Créer une
+machine »** : un textarea JSON pré-rempli d'un modèle valide, un bouton **« Valider & charger »**
+et un bouton **« Télécharger .json »**. Le moteur (`loadCustomMachine`) compile les regex d'exploit
+(écrites en chaînes, ou sous la forme `{ "__regex__": ..., "__flags__": ... }` de `machines.json`),
+valide le schéma via `validateMachines`, refuse toute collision d'id/ip, puis injecte la machine
+dans le lab — **déverrouillée et immédiatement jouable** dans le terminal (recon → accès → privesc
+→ flags). Elle est marquée `custom` : exclue des badges « tour complet »/« perfectionniste » et
+**non sauvegardée** (bac à sable, elle disparaît au rechargement). Le `.json` téléchargé se colle
+tel quel dans `MACHINES` (`js/machines.js`) pour la rendre permanente.
+
 ## Ajouter une machine
 
 Ajoute un objet dans `MACHINES` (`js/machines.js`) avec le même schéma que les machines

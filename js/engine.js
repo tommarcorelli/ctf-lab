@@ -708,7 +708,7 @@ const BADGE_DEFS = [
     desc: "Termine toutes les machines débloquées, sans aucun indice.",
     scope: "global",
     check: () => {
-      const unlocked = MACHINES.filter((m) => GAME.unlocked.includes(m.id));
+      const unlocked = MACHINES.filter((m) => !m.custom && GAME.unlocked.includes(m.id));
       if (!unlocked.length) return false;
       const allDone = unlocked.every((m) => GAME.progress[m.id].rootFlag);
       const noHints = unlocked.every((m) => {
@@ -724,7 +724,7 @@ const BADGE_DEFS = [
     label: "Tour complet",
     desc: "Capture le flag root de toutes les machines du lab.",
     scope: "global",
-    check: () => MACHINES.every((m) => GAME.progress[m.id].rootFlag),
+    check: () => MACHINES.filter((m) => !m.custom).every((m) => GAME.progress[m.id].rootFlag),
   },
   {
     id: "jeopardy_complete",
@@ -1080,6 +1080,52 @@ function scanForFlags(machine, text) {
   });
   persistSave();
   if (typeof renderSidebar === "function") renderSidebar();
+}
+
+// ── Éditeur de machines : charger une machine déclarative (JSON) à la volée ───
+// Les regex des exploits peuvent être écrites soit comme des chaînes (clé finissant
+// par "Regex"), soit sous la forme balisée { __regex__, __flags__ } de machines.json.
+function compileRegexesDeep(value, key) {
+  if (Array.isArray(value)) return value.map((v) => compileRegexesDeep(v));
+  if (value && typeof value === "object") {
+    if (typeof value.__regex__ === "string") {
+      try { return new RegExp(value.__regex__, value.__flags__ || ""); } catch { return value; }
+    }
+    const obj = {};
+    for (const k of Object.keys(value)) obj[k] = compileRegexesDeep(value[k], k);
+    return obj;
+  }
+  if (typeof value === "string" && /Regex$/.test(key || "")) {
+    try { return new RegExp(value); } catch { return value; }
+  }
+  return value;
+}
+
+// Charge une machine custom (objet ou JSON) : compile ses regex, valide son schéma,
+// vérifie l'absence de collision d'id/ip, puis l'injecte dans MACHINES (déverrouillée,
+// marquée custom → exclue des badges "tour complet"/"perfectionniste"). Non persistée :
+// elle disparaît au rechargement (bac à sable / scénario partagé).
+function loadCustomMachine(input) {
+  let raw;
+  try { raw = typeof input === "string" ? JSON.parse(input) : input; }
+  catch (e) { return { ok: false, errors: ["JSON invalide : " + e.message] }; }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return { ok: false, errors: ["La racine doit être un objet décrivant une machine."] };
+  }
+  const machine = compileRegexesDeep(raw);
+  machine.custom = true;
+  const errors = [];
+  if (!machine.id) errors.push('champ "id" manquant');
+  else if (MACHINES.some((m) => m.id === machine.id)) errors.push(`id déjà utilisé par une machine existante : ${machine.id}`);
+  if (machine.ip && MACHINES.some((m) => m.ip === machine.ip)) errors.push(`ip déjà utilisée par une machine existante : ${machine.ip}`);
+  if (typeof validateMachines === "function") errors.push(...validateMachines([machine]));
+  if (errors.length) return { ok: false, errors };
+  MACHINES.push(machine);
+  if (!GAME.unlocked.includes(machine.id)) GAME.unlocked.push(machine.id);
+  if (!GAME.progress[machine.id]) GAME.progress[machine.id] = { recon: false, access: false, privesc: false, userFlag: false, rootFlag: false };
+  if (!GAME.hintsUsed[machine.id]) GAME.hintsUsed[machine.id] = { recon: 0, access: 0, privesc: 0 };
+  if (typeof renderSidebar === "function") renderSidebar();
+  return { ok: true, errors: [], machine };
 }
 
 // ── Dispatcher principal ─────────────────────────────────────────────────────

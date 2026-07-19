@@ -691,6 +691,70 @@ section("Parser shell : $VAR, $(...), redirections", () => {
   assert(/FLAG\{nimbus_acces_initial/.test(run(ctx, "cat $(echo user.txt)").text), "cat $(echo user.txt) lit bien le flag");
 });
 
+// ── 16. Éditeur de machines : loadCustomMachine (JSON déclaratif) ────────────
+section("Éditeur de machines : loadCustomMachine", () => {
+  const ctx = freshContext();
+  const before = get(ctx, "MACHINES.length");
+
+  const tpl = {
+    id: "sandbox", name: "SANDBOX", ip: "10.99.0.1", difficulty: "Facile",
+    os: "Linux (Debian 12)", briefing: "Machine de démonstration créée dans l'éditeur.",
+    ports: [{ port: 22, proto: "tcp", state: "open", service: "ssh", version: "OpenSSH 9.2p1" }],
+    web: {}, ftp: { enabled: false },
+    sshUsers: { guest: { password: "guest123" } },
+    targetFS: {
+      hostname: "sandbox", homeDir: "/home/guest",
+      users: { guest: { home: "/home/guest", fs: {
+        "user.txt": { type: "file", content: "FLAG{sandbox_user}", perms: "-rw-r-----", owner: "guest" },
+      } } },
+      extraFS: {}, sudoL: "guest peut : (root) NOPASSWD: /usr/bin/less",
+    },
+    // regex écrite comme une chaîne (clé finissant par "Regex") -> compilée au chargement
+    privesc: {
+      type: "sudo-gtfobins",
+      exploitCmdRegex: "^sudo\\s+(/usr/bin/)?less\\s+/etc/hostname$",
+      pagerEscapeRegex: "^!/?(bin/)?sh$|^!bash$",
+      enterMsg: "(pager root ouvert — tape !sh)",
+    },
+    rootFile: { path: "/root/root.txt", content: "FLAG{sandbox_root}" },
+    hints: { recon: ["scanne le port"], access: ["ssh guest"], privesc: ["sudo less puis !sh"] },
+  };
+  const json = JSON.stringify(tpl);
+
+  // JSON invalide -> erreur
+  const bad = get(ctx, `loadCustomMachine('{ pas du json')`);
+  assert(!bad.ok && /JSON invalide/.test(bad.errors[0]), "un JSON invalide est refusé");
+
+  // Schéma incomplet -> erreurs de validateMachines
+  const incomplete = get(ctx, `loadCustomMachine(${JSON.stringify(JSON.stringify({ id: "x", name: "X" }))})`);
+  assert(!incomplete.ok && incomplete.errors.length > 0, "une machine incomplète est refusée avec des erreurs de schéma");
+
+  // Collision d'id avec une machine existante -> erreur
+  const collide = get(ctx, `loadCustomMachine(${JSON.stringify(JSON.stringify(Object.assign({}, tpl, { id: "nimbus" })))})`);
+  assert(!collide.ok && /id déjà utilisé/.test(collide.errors.join(" ")), "un id déjà pris est refusé");
+
+  // Chargement valide -> injectée, déverrouillée, regex compilée
+  const res = get(ctx, `loadCustomMachine(${JSON.stringify(json)})`);
+  assert(res.ok, "une machine valide est acceptée (" + JSON.stringify(res.errors) + ")");
+  assertEqual(get(ctx, "MACHINES.length"), before + 1, "la machine custom est ajoutée à MACHINES");
+  assert(get(ctx, `Object.prototype.toString.call(MACHINES.find(m=>m.id==='sandbox').privesc.exploitCmdRegex)`) === "[object RegExp]", "la regex string a bien été compilée en RegExp");
+  assert(get(ctx, "GAME.unlocked.includes('sandbox')"), "la machine custom est déverrouillée");
+
+  // ...et pleinement jouable dans le vrai moteur
+  run(ctx, "use sandbox");
+  run(ctx, "nmap 10.99.0.1");
+  run(ctx, "ssh guest@10.99.0.1"); pass(ctx, "guest123");
+  assert(/FLAG\{sandbox_user\}/.test(run(ctx, "cat user.txt").text), "flag user de la machine custom lisible");
+  run(ctx, "sudo less /etc/hostname");
+  run(ctx, "!sh");
+  assert(/FLAG\{sandbox_root\}/.test(run(ctx, "cat /root/root.txt").text), "flag root de la machine custom capturé");
+  const p = get(ctx, "GAME.progress.sandbox");
+  assert(p.recon && p.access && p.privesc && p.userFlag && p.rootFlag, "les 5 jalons de la machine custom sont validés");
+
+  // La machine custom n'empêche pas le badge "tour complet" (exclue du décompte)
+  assert(get(ctx, "MACHINES.some(m=>m.custom)"), "la machine custom est bien marquée custom");
+});
+
 // ── Rapport final ─────────────────────────────────────────────────────────────
 Promise.all(pendingAsync).then(() => {
   console.log(`\n${"─".repeat(60)}`);

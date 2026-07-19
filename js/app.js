@@ -260,6 +260,83 @@ function downloadText(filename, text, mimeType) {
   } catch (e) {}
 }
 
+// ── Éditeur de machines (Phase 4) ────────────────────────────────────────────
+const EDITOR_TEMPLATE = JSON.stringify({
+  id: "sandbox",
+  name: "SANDBOX",
+  ip: "10.99.0.1",
+  difficulty: "Facile",
+  os: "Linux (Debian 12)",
+  briefing: "Une machine de démonstration créée dans l'éditeur.",
+  ports: [{ port: 22, proto: "tcp", state: "open", service: "ssh", version: "OpenSSH 9.2p1" }],
+  web: {},
+  ftp: { enabled: false },
+  sshUsers: { guest: { password: "guest123" } },
+  targetFS: {
+    hostname: "sandbox",
+    homeDir: "/home/guest",
+    users: {
+      guest: {
+        home: "/home/guest",
+        fs: {
+          "user.txt": { type: "file", content: "FLAG{sandbox_user}", perms: "-rw-r-----", owner: "guest" },
+        },
+      },
+    },
+    extraFS: {},
+    sudoL: "L'utilisateur guest peut lancer :\n    (root) NOPASSWD: /usr/bin/less",
+  },
+  privesc: {
+    type: "sudo-gtfobins",
+    exploitCmdRegex: "^sudo\\s+(/usr/bin/)?less\\s+/etc/hostname$",
+    pagerEscapeRegex: "^!/?(bin/)?sh$|^!bash$",
+    enterMsg: "(pager root ouvert — tape !sh pour un shell)",
+  },
+  rootFile: { path: "/root/root.txt", content: "FLAG{sandbox_root}" },
+  hints: {
+    recon: ["Scanne les ports (`nmap 10.99.0.1`)."],
+    access: ["Connecte-toi avec `ssh guest@10.99.0.1` (mot de passe guest123)."],
+    privesc: ["`sudo less /etc/hostname` puis `!sh` dans le pager."],
+  },
+}, null, 2);
+
+function editorEl(id) { return document.getElementById(id); }
+function openEditor() {
+  const ta = editorEl("editor-json");
+  if (ta && !ta.value.trim()) ta.value = EDITOR_TEMPLATE;
+  editorEl("editor-modal").classList.remove("hidden");
+  if (ta) ta.focus();
+}
+function closeEditor() { editorEl("editor-modal").classList.add("hidden"); }
+function setEditorMsg(html, cls) {
+  const el = editorEl("editor-msg");
+  el.className = "editor-msg" + (cls ? " " + cls : "");
+  el.innerHTML = html;
+}
+function loadFromEditor() {
+  const json = editorEl("editor-json").value;
+  const res = loadCustomMachine(json);
+  if (!res.ok) {
+    setEditorMsg("❌ Machine refusée :<ul>" + res.errors.map((e) => `<li>${escapeHtml(e)}</li>`).join("") + "</ul>", "err");
+    return;
+  }
+  setEditorMsg(`✅ « ${escapeHtml(res.machine.name)} » chargée et déverrouillée — bascule sur le terminal pour la jouer.`, "ok");
+  renderSidebar();
+  closeEditor();
+  inputEl.value = "use " + res.machine.id;
+  submitInput();
+  printLine(`🛠️ Machine custom « ${res.machine.name} » ajoutée au lab (bac à sable, non sauvegardée). Tape \`machines\` pour la voir.`, "t-hint");
+}
+function downloadFromEditor() {
+  const json = editorEl("editor-json").value;
+  let id = "machine";
+  try { id = (JSON.parse(json).id || "machine").replace(/[^a-z0-9_-]/gi, "") || "machine"; } catch (e) {}
+  downloadText(`${id}.json`, json, "application/json");
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
 // ── Export / import de sauvegarde chiffrée (Web Crypto, zéro backend) ───────
 // Format du fichier .json.enc : { format: "ctf-lab-save", v: 1, salt, iv, data } (tout en base64
 // sauf format/v). Chiffrement AES-GCM 256, clé dérivée de la passphrase via PBKDF2-SHA256
@@ -656,6 +733,15 @@ function boot() {
     if (voiceEnabled) speak("Narration vocale activée.");
     else if ("speechSynthesis" in window) window.speechSynthesis.cancel();
   });
+
+  document.getElementById("editor-toggle").addEventListener("click", openEditor);
+  document.getElementById("editor-close").addEventListener("click", closeEditor);
+  document.getElementById("editor-load").addEventListener("click", loadFromEditor);
+  document.getElementById("editor-download").addEventListener("click", downloadFromEditor);
+  document.getElementById("editor-reset").addEventListener("click", () => { editorEl("editor-json").value = EDITOR_TEMPLATE; setEditorMsg(""); });
+  document.getElementById("editor-modal").addEventListener("click", (e) => { if (e.target.id === "editor-modal") closeEditor(); });
+  if (location.hash === "#editor") openEditor();
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !editorEl("editor-modal").classList.contains("hidden")) closeEditor(); });
 
   resetSessionToAttacker();
   renderSidebar();
