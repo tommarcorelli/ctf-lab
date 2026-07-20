@@ -2370,26 +2370,44 @@ function dispatch(cmd, args, rawFirst) {
   }
 }
 
+const HELP_FR =
+  "Commandes générales : help, clear, machines, use <nom>, reset <nom>, hint, insane [on|off], progress, badges, records, writeup <nom>, export <passphrase>, import, score, exit\n" +
+  "Mode Jeopardy : challenges, challenge <id>, chint <id>, submit <id> <flag>, hashcat <hash>, daily\n" +
+  "Mode Blue Team : blueteam, incident <id>, answer <id> <question> <valeur>, bthint <id> <question>\n" +
+  "Pare-feu : firewall [<id>|reset|exit], iptables -L | -A/-I/-D INPUT ... | -P INPUT ACCEPT|DROP | -F\n" +
+  "Phishing : phishing (ou inbox), mail <id>, report <id> <question> <valeur>, phhint <id> <question>\n" +
+  "Reverse : malware (liste), strings <id>, disas <id>, resolve <id> <question> <valeur>, rehint <id> <question>\n" +
+  "Reconnaissance : nmap <ip>, nmap <cidr> (balayage de sous-réseau via un pivot), arp -a, curl <url>, ftp <ip>, nc <ip> <port>, cloudctl ls|get|cp\n" +
+  "Accès : ssh <user>@<ip> [-p <port>], curl -F \"file=@<webshell>\" <url> (upload), ssh -L <lport>:<hôte_interne>:<port> <user>@<pivot> (tunnel/pivot)\n" +
+  "Système (une fois connecté ou en local) : ls [-la], cd, pwd, cat, find, echo, vim <fichier>, whoami, id, sudo -l, sudo <cmd>, crontab -l, docker ps, undo/redo (annuler/rétablir une modif du FS)\n" +
+  "Windows (machine cible Windows) : dir, type, net user, net localgroup administrators, schtasks /query, icacls <fichier>\n" +
+  "Filtres en pipe : grep, wc -l, sort [-u], head, tail, cut, awk '{print $N}'\n" +
+  "Shell : variables $USER/$HOME/$PWD/$HOSTNAME/$UID/$? (${VAR} aussi), substitution $(commande), redirections > >> 2> &> 2>/dev/null\n" +
+  "Bac à sable : generate [seed] (machine aléatoire jouable), sandbox (FS libre pour s'entraîner, bouton 🧪), éditeur de machines (🛠️), replay (rejoue ta session, ▶️)\n" +
+  "Visualisation : graph [machine] (graphe d'attaque, bouton 🗺️), stack (défi buffer overflow schématisé, bouton 🧠)\n" +
+  "Progression : score, skills (arbre de compétences / rang), whois <ip> (recon avancée, niv.2+)\n" +
+  "Hot-seat : profiles (comparer les joueurs), profile <nom> (changer/créer un profil local)\n" +
+  "Affichage : split (ou tmux, bouton ▦) — panneau latéral « journal » des commandes et évènements";
+const HELP_EN =
+  "General : help, clear, machines, use <name>, reset <name>, hint, insane [on|off], progress, badges, records, writeup <name>, export <passphrase>, import, score, exit\n" +
+  "Jeopardy mode : challenges, challenge <id>, chint <id>, submit <id> <flag>, hashcat <hash>, daily\n" +
+  "Blue Team mode : blueteam, incident <id>, answer <id> <question> <value>, bthint <id> <question>\n" +
+  "Firewall : firewall [<id>|reset|exit], iptables -L | -A/-I/-D INPUT ... | -P INPUT ACCEPT|DROP | -F\n" +
+  "Phishing : phishing (or inbox), mail <id>, report <id> <question> <value>, phhint <id> <question>\n" +
+  "Reverse eng. : malware (list), strings <id>, disas <id>, resolve <id> <question> <value>, rehint <id> <question>\n" +
+  "Recon : nmap <ip>, nmap <cidr> (subnet sweep via a pivot), arp -a, curl <url>, ftp <ip>, nc <ip> <port>, cloudctl ls|get|cp\n" +
+  "Access : ssh <user>@<ip> [-p <port>], curl -F \"file=@<webshell>\" <url> (upload), ssh -L <lport>:<internal_host>:<port> <user>@<pivot> (tunnel/pivot)\n" +
+  "System (once connected or local) : ls [-la], cd, pwd, cat, find, echo, vim <file>, whoami, id, sudo -l, sudo <cmd>, crontab -l, docker ps, undo/redo (undo/redo an FS change)\n" +
+  "Windows (Windows target) : dir, type, net user, net localgroup administrators, schtasks /query, icacls <file>\n" +
+  "Pipe filters : grep, wc -l, sort [-u], head, tail, cut, awk '{print $N}'\n" +
+  "Shell : variables $USER/$HOME/$PWD/$HOSTNAME/$UID/$? (also ${VAR}), substitution $(command), redirections > >> 2> &> 2>/dev/null\n" +
+  "Sandbox : generate [seed] (random playable machine), sandbox (free FS to practise, 🧪 button), machine editor (🛠️), replay (replay your session, ▶️)\n" +
+  "Visualisation : graph [machine] (attack graph, 🗺️ button), stack (schematic buffer-overflow challenge, 🧠 button)\n" +
+  "Progress : score, skills (skill tree / rank), whois <ip> (advanced recon, lvl.2+)\n" +
+  "Hot-seat : profiles (compare players), profile <name> (switch/create a local profile)\n" +
+  "Display : split (or tmux, ▦ button) — side « journal » panel of commands and events";
 function cmdHelp() {
-  return out(
-    "Commandes générales : help, clear, machines, use <nom>, reset <nom>, hint, insane [on|off], progress, badges, records, writeup <nom>, export <passphrase>, import, score, exit\n" +
-    "Mode Jeopardy : challenges, challenge <id>, chint <id>, submit <id> <flag>, hashcat <hash>, daily\n" +
-    "Mode Blue Team : blueteam, incident <id>, answer <id> <question> <valeur>, bthint <id> <question>\n" +
-    "Pare-feu : firewall [<id>|reset|exit], iptables -L | -A/-I/-D INPUT ... | -P INPUT ACCEPT|DROP | -F\n" +
-    "Phishing : phishing (ou inbox), mail <id>, report <id> <question> <valeur>, phhint <id> <question>\n" +
-    "Reverse : malware (liste), strings <id>, disas <id>, resolve <id> <question> <valeur>, rehint <id> <question>\n" +
-    "Reconnaissance : nmap <ip>, nmap <cidr> (balayage de sous-réseau via un pivot), arp -a, curl <url>, ftp <ip>, nc <ip> <port>, cloudctl ls|get|cp\n" +
-    "Accès : ssh <user>@<ip> [-p <port>], curl -F \"file=@<webshell>\" <url> (upload), ssh -L <lport>:<hôte_interne>:<port> <user>@<pivot> (tunnel/pivot)\n" +
-    "Système (une fois connecté ou en local) : ls [-la], cd, pwd, cat, find, echo, vim <fichier>, whoami, id, sudo -l, sudo <cmd>, crontab -l, docker ps, undo/redo (annuler/rétablir une modif du FS)\n" +
-    "Windows (machine cible Windows) : dir, type, net user, net localgroup administrators, schtasks /query, icacls <fichier>\n" +
-    "Filtres en pipe : grep, wc -l, sort [-u], head, tail, cut, awk '{print $N}'\n" +
-    "Shell : variables $USER/$HOME/$PWD/$HOSTNAME/$UID/$? (${VAR} aussi), substitution $(commande), redirections > >> 2> &> 2>/dev/null\n" +
-    "Bac à sable : generate [seed] (machine aléatoire jouable), sandbox (FS libre pour s'entraîner, bouton 🧪), éditeur de machines (🛠️), replay (rejoue ta session, ▶️)\n" +
-    "Visualisation : graph [machine] (graphe d'attaque, bouton 🗺️), stack (défi buffer overflow schématisé, bouton 🧠)\n" +
-    "Progression : score, skills (arbre de compétences / rang), whois <ip> (recon avancée, niv.2+)\n" +
-    "Hot-seat : profiles (comparer les joueurs), profile <nom> (changer/créer un profil local)\n" +
-    "Affichage : split (ou tmux, bouton ▦) — panneau latéral « journal » des commandes et évènements"
-  );
+  return out(typeof LANG !== "undefined" && LANG === "en" ? HELP_EN : HELP_FR);
 }
 
 function cmdUse(args) {

@@ -34,6 +34,7 @@ const UI_STRINGS = {
     "journal.title": "📜 Journal",
     "banner.help": "Tape `help` pour la liste des commandes, `machines` pour voir les cibles.",
     "banner.subtitle": "Recon -> Accès initial -> Privesc -> Flag",
+    "banner.title": "CTF LAB — Terminal d'entraînement",
   },
   en: {
     "app.subtitle": "Recon → Initial access → Privilege escalation → Flag",
@@ -64,6 +65,7 @@ const UI_STRINGS = {
     "journal.title": "📜 Journal",
     "banner.help": "Type `help` for the command list, `machines` to see the targets.",
     "banner.subtitle": "Recon -> Initial access -> Privesc -> Flag",
+    "banner.title": "CTF LAB — Training terminal",
   },
 };
 let LANG = (function () { try { return localStorage.getItem("ctf_lab_lang") === "en" ? "en" : "fr"; } catch (e) { return "fr"; } })();

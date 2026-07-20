@@ -199,7 +199,14 @@ reverse shell manuel sur MERIDIAN, `validateMachines` en garde-fou de schéma) :
       de `tests/run.js` : ici c'est un smoke test dédié aux chemins d'exploit + générateur de
       walkthrough.
 - [x] **PWA installable** — manifest + service worker (toujours vanilla) pour jouer hors-ligne
-- [ ] **i18n FR/EN** — actuellement tout est codé en dur en français
+- [~] **i18n FR/EN** — cadre d'internationalisation livré : `js/i18n.js` (dictionnaire UI FR/EN,
+      `t()`/`applyI18n()`/`setLang()`/`toggleLang()`, `LANG` persisté), attributs `data-i18n` /
+      `data-i18n-html` / `data-i18n-title` sur tout le **chrome de l'UI** (en-tête, info-bulles,
+      sidebar, les 5 modales, bannière), bouton **🌐 FR/EN** + deep-link `index.html#en`. La commande
+      **`help`** est bilingue (`HELP_FR`/`HELP_EN`, le moteur lit `LANG`). *Reste FR (choix assumé,
+      documenté)* : les sorties de commandes du moteur et le contenu narratif des 12 machines
+      (briefings/indices/lore) — leur traduction doublerait la charge de maintenance du contenu ;
+      l'infrastructure est en place pour le faire incrémentalement.
 
 ## 🚀 Phase 4 — Chantiers ambitieux, toujours 100% client / vanilla JS
 

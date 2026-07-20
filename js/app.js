@@ -1108,13 +1108,14 @@ function boot() {
   renderSidebar();
   updatePromptLabel();
 
+  const tt = (typeof t === "function") ? t : (k) => k;
   const banner = [
     ["=========================================", "t-banner"],
-    ["  CTF LAB — Terminal d'entraînement", "t-banner"],
-    ["  Recon -> Accès initial -> Privesc -> Flag", "t-banner"],
+    ["  " + tt("banner.title"), "t-banner"],
+    ["  " + tt("banner.subtitle"), "t-banner"],
     ["=========================================", "t-banner"],
     ["", "t-out"],
-    ["Tape `help` pour la liste des commandes, `machines` pour voir les cibles.", "t-out"],
+    [tt("banner.help"), "t-out"],
     ["", "t-out"],
   ];
   let i = 0;
