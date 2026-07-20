@@ -1842,32 +1842,54 @@ function agAccessLabel(m) {
   return "fuite de creds → SSH";
 }
 function agEsc(s) { return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
+// Voies d'accès d'une machine : la plupart en ont une, mais certaines exposent DEUX
+// vecteurs d'entrée distincts (accès "principal" par creds/SQLi ET voie alternative par
+// reverse shell / injection) — c'est ce qui rend le graphe non-linéaire.
+function agAccessRoutes(machine) {
+  const routes = [{ label: agAccessLabel(machine), alt: false }];
+  const hasPrimarySsh = machine.sshUsers && Object.keys(machine.sshUsers).length > 0;
+  if (machine.altAccess && !machine.upload && (machine.sqli || hasPrimarySsh)) {
+    routes.push({ label: "reverse shell (injection)", alt: true });
+  }
+  return routes;
+}
 function buildAttackGraphSVG(machine, progress) {
   const p = progress || { recon: false, access: false, privesc: false, userFlag: false, rootFlag: false };
-  const W = 130, H = 56;
-  const nodes = [
-    { x: 20, y: 92, on: p.recon, title: "Recon", sub: "nmap" },
-    { x: 190, y: 92, on: p.access, title: "Accès initial", sub: agAccessLabel(machine) },
-    { x: 360, y: 92, on: p.privesc, title: "Privesc", sub: AG_PRIVESC_LABELS[machine.privesc.type] || machine.privesc.type },
-    { x: 530, y: 92, on: p.rootFlag, title: "Flag root", sub: "root.txt" },
-    { x: 360, y: 8, on: p.userFlag, title: "Flag user", sub: "user.txt" },
-  ];
-  const edges = [
-    { x1: 150, y1: 120, x2: 190, y2: 120, on: p.access },        // recon -> accès
-    { x1: 320, y1: 120, x2: 360, y2: 120, on: p.privesc },       // accès -> privesc
-    { x1: 490, y1: 120, x2: 530, y2: 120, on: p.rootFlag },      // privesc -> root
-    { x1: 255, y1: 92, x2: 380, y2: 64, on: p.userFlag },        // accès -> flag user
-  ];
-  const edgeSvg = edges.map((e) => `<line class="ag-edge${e.on ? " on" : ""}" x1="${e.x1}" y1="${e.y1}" x2="${e.x2}" y2="${e.y2}" marker-end="url(#agArrow)"/>`).join("");
-  const nodeSvg = nodes.map((n) => (
-    `<g class="ag-node${n.on ? " on" : ""}">` +
+  const W = 140, H = 52;
+  const routes = agAccessRoutes(machine);
+  const two = routes.length > 1;
+  const cy = two ? 100 : 92;
+  const mk = (x, y, on, title, sub, cls) => ({ x, y, on, title, sub, cls: cls || "" });
+  const N = {
+    recon: mk(15, cy, p.recon, "Recon", "nmap"),
+    privesc: mk(375, cy, p.privesc, "Privesc", AG_PRIVESC_LABELS[machine.privesc.type] || machine.privesc.type),
+    root: mk(550, cy, p.rootFlag, "Flag root", "root.txt"),
+    flaguser: mk(375, 8, p.userFlag, "Flag user", "user.txt"),
+    access: two
+      ? [mk(190, 44, p.access, "Accès (voie A)", routes[0].label), mk(190, 156, p.access, "Accès (voie B)", routes[1].label, "alt")]
+      : [mk(190, cy, p.access, "Accès initial", routes[0].label)],
+  };
+  const rc = (n) => ({ x: n.x + W, y: n.y + H / 2 }), lc = (n) => ({ x: n.x, y: n.y + H / 2 });
+  const tc = (n) => ({ x: n.x + W / 2, y: n.y }), bc = (n) => ({ x: n.x + W / 2, y: n.y + H });
+  const edges = [];
+  N.access.forEach((a) => {
+    edges.push({ a: rc(N.recon), b: lc(a), on: p.access });
+    edges.push({ a: rc(a), b: lc(N.privesc), on: p.privesc });
+  });
+  edges.push({ a: rc(N.privesc), b: lc(N.root), on: p.rootFlag });
+  edges.push({ a: tc(N.access[0]), b: bc(N.flaguser), on: p.userFlag });
+  const allNodes = [N.recon, ...N.access, N.privesc, N.root, N.flaguser];
+  const edgeSvg = edges.map((e) => `<line class="ag-edge${e.on ? " on" : ""}" x1="${e.a.x}" y1="${e.a.y}" x2="${e.b.x}" y2="${e.b.y}" marker-end="url(#agArrow)"/>`).join("");
+  const nodeSvg = allNodes.map((n) => (
+    `<g class="ag-node${n.on ? " on" : ""}${n.cls ? " " + n.cls : ""}">` +
     `<rect x="${n.x}" y="${n.y}" rx="9" ry="9" width="${W}" height="${H}"/>` +
-    `<text class="ag-t" x="${n.x + W / 2}" y="${n.y + 23}">${n.on ? "✔ " : ""}${agEsc(n.title)}</text>` +
-    `<text class="ag-s" x="${n.x + W / 2}" y="${n.y + 41}">${agEsc(n.sub)}</text>` +
+    `<text class="ag-t" x="${n.x + W / 2}" y="${n.y + 22}">${n.on ? "✔ " : ""}${agEsc(n.title)}</text>` +
+    `<text class="ag-s" x="${n.x + W / 2}" y="${n.y + 40}">${agEsc(n.sub)}</text>` +
     `</g>`
   )).join("");
+  const height = two ? 224 : 170;
   return (
-    `<svg class="attack-graph" viewBox="0 0 680 170" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Graphe d'attaque de ${agEsc(machine.name)}">` +
+    `<svg class="attack-graph" viewBox="0 0 710 ${height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Graphe d'attaque de ${agEsc(machine.name)}">` +
     `<defs><marker id="agArrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" class="ag-arrowhead"/></marker></defs>` +
     edgeSvg + nodeSvg +
     `</svg>`

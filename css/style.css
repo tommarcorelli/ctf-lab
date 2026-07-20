@@ -513,6 +513,7 @@ html, body {
 .attack-graph .ag-edge { stroke: var(--step-off); stroke-width: 2; }
 .attack-graph .ag-edge.on { stroke: var(--green); }
 .attack-graph .ag-arrowhead { fill: var(--step-off); }
+.attack-graph .ag-node.alt rect { stroke-dasharray: 5 4; }
 
 /* ── Visualiseur de pile (buffer overflow) ────────────────────────────────── */
 .stack-toolbar {

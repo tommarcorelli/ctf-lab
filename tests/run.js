@@ -1071,6 +1071,14 @@ section("Attack graph : rendu SVG du chemin d'attaque", () => {
   const full = get(ctx, `buildAttackGraphSVG(MACHINES.find(m=>m.id==='axiom'), {recon:true,access:true,privesc:true,userFlag:true,rootFlag:true})`);
   assertEqual((full.match(/class="ag-node on"/g) || []).length, 5, "machine terminée -> 5 nœuds allumés");
   assert(/groupe docker/.test(full), "le label de privesc reflète la technique de la machine (docker pour AXIOM)");
+
+  // Graphe non-linéaire : une machine à double vecteur d'accès (PHANTOM : SQLi OU reverse shell)
+  assertEqual(get(ctx, `agAccessRoutes(MACHINES.find(m=>m.id==='phantom')).length`), 2, "PHANTOM a deux voies d'accès");
+  const phantom = get(ctx, `buildAttackGraphSVG(MACHINES.find(m=>m.id==='phantom'), {recon:true,access:false,privesc:false,userFlag:false,rootFlag:false})`);
+  assert(/Accès \(voie A\)/.test(phantom) && /Accès \(voie B\)/.test(phantom), "le graphe affiche les deux voies d'accès en parallèle");
+  assert(/ag-node alt/.test(phantom), "la voie alternative (reverse shell) est marquée");
+  // Une machine à vecteur unique (NIMBUS) reste linéaire
+  assertEqual(get(ctx, `agAccessRoutes(MACHINES.find(m=>m.id==='nimbus')).length`), 1, "NIMBUS n'a qu'une voie d'accès");
 });
 
 // ── 26. Visualiseur de pile : défi buffer overflow simulé ────────────────────

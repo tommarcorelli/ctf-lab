@@ -267,15 +267,15 @@ reverse shell manuel sur MERIDIAN, `validateMachines` en garde-fou de schéma) :
 
 ## 🤯 Phase 5 — Idées de fou malade (toujours 100% vanilla JS, sans dépendance, sans backend)
 
-- [~] **Attack graph non-linéaire** — *rendu SVG livré* : la commande **`graph [machine]`** (ou le
-      bouton **🗺️**) ouvre une modale affichant le **graphe d'attaque** de la machine en SVG
-      (`buildAttackGraphSVG`, généré dans `engine.js` → testable), avec les nœuds recon → accès →
-      privesc → flag root (+ flag user en branche) et les libellés de technique déduits de la
-      machine. Les nœuds/arêtes s'**allument** (classe `.on`, vert) à mesure que la progression
-      avance, restent **grisés** sinon. Sélecteur pour changer de machine. Testé dans `tests/run.js`
-      (SVG complet, comptage des nœuds allumés selon la progression, libellé de privesc) et vérifié
-      au rendu. *Reste ouvert* : le vrai graphe **non-linéaire** (plusieurs entrées / chemins de
-      privesc alternatifs) — pour l'instant le graphe reste le chemin canonique recon→privesc.
+- [x] **Attack graph non-linéaire** — la commande **`graph [machine]`** (ou le bouton **🗺️**) ouvre
+      une modale affichant le **graphe d'attaque** en SVG (`buildAttackGraphSVG`, dans `engine.js` →
+      testable). **Non-linéaire** : `agAccessRoutes` détecte les machines à **plusieurs vecteurs
+      d'entrée** (accès principal par creds/SQLi **ET** voie alternative par reverse shell/injection —
+      ex. MERIDIAN, PHANTOM) et affiche **deux nœuds d'accès en parallèle** (la voie alternative en
+      tirets) qui convergent vers la privesc ; les machines à vecteur unique restent linéaires. Les
+      nœuds/arêtes s'allument (`.on`, vert) selon la progression, grisés sinon. Sélecteur de machine.
+      Testé dans `tests/run.js` (comptage des nœuds allumés, double voie sur PHANTOM, voie unique sur
+      NIMBUS) et vérifié au rendu.
 - [x] **Sous-réseau simulé multi-hôtes** — `nmap <cidr>` (ex. `nmap 172.16.20.0/24`) balaie un
       segment interne et révèle **plusieurs hôtes d'un coup** (`SUBNETS`), et `arp -a` affiche la
       table ARP (MAC simulées sur `tun0`). Prolonge le pivot déjà en place : le segment n'est
