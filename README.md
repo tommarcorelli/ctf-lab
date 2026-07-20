@@ -196,6 +196,14 @@ Deux choix assumés : les backslash restent **littéraux** (pas d'échappement b
 chemins Windows des machines cibles (`C:\Scripts\backup.bat`) fonctionnent, et les variables sont
 en **lecture seule** (`export` est déjà la commande de sauvegarde chiffrée, pas une assignation).
 
+## Langues (FR / EN)
+
+Le bouton **🌐** de l'en-tête (ou le lien `index.html#en`) bascule l'interface entre **français et
+anglais** à chaud (choix mémorisé). L'i18n couvre toute l'interface (en-tête, info-bulles, sidebar,
+modales, bannière), l'aide (`help`), les briefings des 12 machines et les messages clés du gameplay
+(cible active, accès, toasts de progression). Les indices détaillés et le lore des machines restent
+en français pour l'instant (l'infrastructure `i18n.js` / `bilang()` permet de les traduire au fil de l'eau).
+
 ## Éditeur de machines intégré
 
 Le bouton 🛠️ de l'en-tête (ou le lien direct `index.html#editor`) ouvre une modale **« Créer une

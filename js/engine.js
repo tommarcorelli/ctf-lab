@@ -1974,7 +1974,7 @@ function scanForFlags(machine, text) {
     if (flag === machine.targetFS.users[Object.keys(machine.targetFS.users)[0]].fs["user.txt"].content && !p.userFlag) {
       p.userFlag = true;
       addScore(100);
-      toast(`🚩 Flag utilisateur capturé sur ${machine.name} (+100 pts)`);
+      toast(bilang(`🚩 Flag utilisateur capturé sur ${machine.name} (+100 pts)`, `🚩 User flag captured on ${machine.name} (+100 pts)`));
       if (typeof playFlagSound === "function") playFlagSound();
     }
     if (flag === machine.rootFile.content && !p.rootFlag) {
@@ -1987,7 +1987,7 @@ function scanForFlags(machine, text) {
         t.startedAt = null;
         chronoLabel = ` en ${formatDuration(t.elapsedMs)}`;
       }
-      toast(`🚩 Flag root capturé sur ${machine.name} (+200 pts)${chronoLabel} — machine terminée !`);
+      toast(bilang(`🚩 Flag root capturé sur ${machine.name} (+200 pts)${chronoLabel} — machine terminée !`, `🚩 Root flag captured on ${machine.name} (+200 pts)${chronoLabel} — machine complete!`));
       if (typeof playFlagSound === "function") playFlagSound();
       if (typeof spawnFlagParticles === "function") spawnFlagParticles();
       if (typeof printLine === "function") printLine(cveFiche(machine), "t-hint");
@@ -2268,7 +2268,7 @@ function handlePagerInput(line) {
     addScore(250);
     persistSave();
     if (typeof renderSidebar === "function") renderSidebar();
-    toast(`🛠️ Élévation de privilèges réussie sur ${machine.name} (+250 pts)`);
+    toast(bilang(`🛠️ Élévation de privilèges réussie sur ${machine.name} (+250 pts)`, `🛠️ Privilege escalation succeeded on ${machine.name} (+250 pts)`));
     return out("# shell root obtenu.\nTape `cat /root/root.txt` pour récupérer le flag.", "t-ok");
   }
   return out("(pager) commande non reconnue — tape `!sh` pour un shell, ou `q` pour quitter.", "t-warn");
@@ -2380,7 +2380,7 @@ function dispatch(cmd, args, rawFirst) {
           addScore(250);
           persistSave();
           if (typeof renderSidebar === "function") renderSidebar();
-          toast(`🛠️ Élévation de privilèges réussie sur ${machine.name} (+250 pts)`);
+          toast(bilang(`🛠️ Élévation de privilèges réussie sur ${machine.name} (+250 pts)`, `🛠️ Privilege escalation succeeded on ${machine.name} (+250 pts)`));
           return out(machine.privesc.enterMsg, "t-ok");
         }
         if (machine.osType === "windows") {
@@ -2391,6 +2391,25 @@ function dispatch(cmd, args, rawFirst) {
     }
   }
 }
+
+// Sélecteur de langue côté moteur (LANG est fourni par js/i18n.js dans le navigateur ;
+// absent dans les tests Node -> repli sur le français).
+function bilang(fr, en) { return (typeof LANG !== "undefined" && LANG === "en") ? en : fr; }
+const BRIEFING_EN = {
+  nimbus: "A small corporate showcase site. A leftover exposure from a migration is still lingering on the network.",
+  vortex: "An internal user-management API. The access control on credentials looks... optimistic.",
+  cerberus: "An internal backup tool. SSH runs on a non-standard port, and a scheduled task runs as root.",
+  obsidian: "A dev API still in staging, and a SUID binary that has no business being there.",
+  phantom: "A small internal blog CMS, with an admin area whose login form smells bad.",
+  meridian: "An internal monitoring platform. The report generator accepts a file path a little too freely.",
+  glacier: "An internal Windows file server. OpenSSH is installed for remote admin, and a scheduled task runs as SYSTEM.",
+  stratus: "A DevOps portal that syncs its backups to object storage. The bucket's access policy looks a bit generous.",
+  nexus: "A web file manager with an upload form. Validation of uploaded files seems limited to the extension.",
+  citadel: "An internal database server, not directly reachable. You must pivot from an already-compromised host on the same network.",
+  tempest: "A continuous-deployment platform. One of its artifact buckets is not only public... but also writable, and its contents are deployed automatically.",
+  axiom: "An internal CI/CD runner that builds the company's container images. The service account running the pipelines has local access it shouldn't have.",
+};
+function machineBriefing(m) { return (bilang("fr", "en") === "en" && BRIEFING_EN[m.id]) ? BRIEFING_EN[m.id] : m.briefing; }
 
 const HELP_FR =
   "Commandes générales : help, clear, machines, use <nom>, reset <nom>, hint, insane [on|off], progress, badges, records, writeup <nom>, export <passphrase>, import, score, exit\n" +
@@ -2436,11 +2455,11 @@ function cmdUse(args) {
   const name = (args[0] || "").toLowerCase();
   const machine = MACHINES.find((m) => m.id === name || m.name.toLowerCase() === name);
   if (!machine) return out(`Machine inconnue : ${args[0] || ""}. Tape \`machines\` pour voir la liste.`, "t-err");
-  if (!GAME.unlocked.includes(machine.id)) return out(`${machine.name} est verrouillée. Termine la machine précédente d'abord.`, "t-err");
+  if (!GAME.unlocked.includes(machine.id)) return out(bilang(`${machine.name} est verrouillée. Termine la machine précédente d'abord.`, `${machine.name} is locked. Finish the previous machine first.`), "t-err");
   SESSION.activeMachine = machine.id;
   return out(
-    `Cible active : ${machine.name} (${machine.ip}) — ${machine.difficulty}\n${machine.briefing}\n` +
-    `Commence par scanner : nmap ${machine.ip}`
+    `${bilang("Cible active", "Active target")} : ${machine.name} (${machine.ip}) — ${machine.difficulty}\n${machineBriefing(machine)}\n` +
+    `${bilang("Commence par scanner", "Start by scanning")} : nmap ${machine.ip}`
   );
 }
 
@@ -2669,7 +2688,7 @@ function cmdDocker(args, rawFirst) {
     addScore(250);
     persistSave();
     if (typeof renderSidebar === "function") renderSidebar();
-    toast(`🛠️ Élévation de privilèges réussie sur ${machine.name} (+250 pts)`);
+    toast(bilang(`🛠️ Élévation de privilèges réussie sur ${machine.name} (+250 pts)`, `🛠️ Privilege escalation succeeded on ${machine.name} (+250 pts)`));
     return out(machine.privesc.enterMsg, "t-ok");
   }
   if (args[0] === "ps") return out(machine.dockerPs || "CONTAINER ID   IMAGE     COMMAND   STATUS    PORTS     NAMES");
@@ -2692,7 +2711,7 @@ function cmdFind(args, rawFirst) {
       addScore(250);
       persistSave();
       if (typeof renderSidebar === "function") renderSidebar();
-      toast(`🛠️ Élévation de privilèges réussie sur ${machine.name} (+250 pts)`);
+      toast(bilang(`🛠️ Élévation de privilèges réussie sur ${machine.name} (+250 pts)`, `🛠️ Privilege escalation succeeded on ${machine.name} (+250 pts)`));
       return out(machine.privesc.enterMsg, "t-ok");
     }
   }
@@ -2983,7 +3002,7 @@ function cmdNmap(args) {
     if (!GAME.times[machine.id].startedAt) GAME.times[machine.id].startedAt = Date.now();
     persistSave();
     if (typeof renderSidebar === "function") renderSidebar();
-    toast(`🔍 Reconnaissance terminée sur ${machine.name} (+100 pts)`);
+    toast(bilang(`🔍 Reconnaissance terminée sur ${machine.name} (+100 pts)`, `🔍 Recon complete on ${machine.name} (+100 pts)`));
   }
   const header = `Nmap scan report for ${machine.name.toLowerCase()} (${machine.ip})\nHost is up.\n\nPORT      STATE SERVICE  VERSION`;
   const rows = machine.ports.map((p) => `${String(p.port + "/" + p.proto).padEnd(9)} ${p.state.padEnd(5)} ${p.service.padEnd(8)} ${p.version}`);
@@ -3167,16 +3186,16 @@ function grantAccess(machine, user, introExtra) {
   SESSION.sudoAttempts[machine.id] = 0;
   SESSION.sudoLocked[machine.id] = false;
   const wasAccessed = GAME.progress[machine.id].access;
-  let msg = introExtra || `Bienvenue sur ${machine.targetFS.hostname} (${machine.os}).\nDernière connexion réussie.\n`;
+  let msg = introExtra || bilang(`Bienvenue sur ${machine.targetFS.hostname} (${machine.os}).\nDernière connexion réussie.\n`, `Welcome to ${machine.targetFS.hostname} (${machine.os}).\nLast login successful.\n`);
   if (!wasAccessed) {
     GAME.progress[machine.id].access = true;
     addScore(150);
     persistSave();
     if (typeof renderSidebar === "function") renderSidebar();
-    toast(`🔑 Accès initial obtenu sur ${machine.name} (+150 pts)`);
+    toast(bilang(`🔑 Accès initial obtenu sur ${machine.name} (+150 pts)`, `🔑 Initial access on ${machine.name} (+150 pts)`));
     msg += machine.osType === "windows"
-      ? "Cherche le flag utilisateur (`type user.txt`), puis explore les tâches planifiées (`schtasks /query`)."
-      : "Cherche le flag utilisateur (`cat user.txt`), puis prépare l'élévation de privilèges (`sudo -l`).";
+      ? bilang("Cherche le flag utilisateur (`type user.txt`), puis explore les tâches planifiées (`schtasks /query`).", "Find the user flag (`type user.txt`), then explore scheduled tasks (`schtasks /query`).")
+      : bilang("Cherche le flag utilisateur (`cat user.txt`), puis prépare l'élévation de privilèges (`sudo -l`).", "Find the user flag (`cat user.txt`), then prepare privilege escalation (`sudo -l`).");
   }
   return out(msg);
 }
@@ -3237,7 +3256,7 @@ function cmdSudo(args, rawFirst) {
     addScore(250);
     persistSave();
     if (typeof renderSidebar === "function") renderSidebar();
-    toast(`🛠️ Élévation de privilèges réussie sur ${machine.name} (+250 pts)`);
+    toast(bilang(`🛠️ Élévation de privilèges réussie sur ${machine.name} (+250 pts)`, `🛠️ Privilege escalation succeeded on ${machine.name} (+250 pts)`));
     return out(machine.privesc.enterMsg, "t-ok");
   }
   SESSION.sudoAttempts[machine.id] = (SESSION.sudoAttempts[machine.id] || 0) + 1;
@@ -3326,7 +3345,7 @@ function cmdBashDashP(args, rawFirst) {
     addScore(250);
     persistSave();
     if (typeof renderSidebar === "function") renderSidebar();
-    toast(`🛠️ Élévation de privilèges réussie sur ${machine.name} (+250 pts)`);
+    toast(bilang(`🛠️ Élévation de privilèges réussie sur ${machine.name} (+250 pts)`, `🛠️ Privilege escalation succeeded on ${machine.name} (+250 pts)`));
     return out("bash-5.1# (shell root obtenu via le bit SUID)", "t-ok");
   }
   return out("bash: -p: option invalide.", "t-err");

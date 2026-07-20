@@ -688,8 +688,8 @@ function renderSidebar() {
     const card = document.createElement("div");
     card.className = "m-card" + (locked ? " locked" : "") + (p.rootFlag ? " done" : "");
     if (SESSION.activeMachine === m.id) card.classList.add("active");
-    const t = GAME.times[m.id] || { startedAt: null, elapsedMs: 0 };
-    const timeLabel = p.rootFlag ? formatDuration(t.elapsedMs) : t.startedAt ? formatDuration(Date.now() - t.startedAt) : null;
+    const tm = GAME.times[m.id] || { startedAt: null, elapsedMs: 0 };
+    const timeLabel = p.rootFlag ? formatDuration(tm.elapsedMs) : tm.startedAt ? formatDuration(Date.now() - tm.startedAt) : null;
     const steps = ["recon", "access", "privesc", "rootFlag"];
     const stepEls = steps
       .map((s) => `<span class="step ${p[s] ? "on" : ""}"></span>`)
@@ -698,9 +698,9 @@ function renderSidebar() {
       <div class="m-head">
         <span class="m-icon">${locked ? "🔒" : p.rootFlag ? "✅" : "💻"}</span>
         <span class="m-name">${m.name}</span>
-        <span class="m-diff diff-${m.difficulty === "Facile" ? "easy" : m.difficulty === "Moyen" ? "med" : m.difficulty === "Expert" ? "expert" : m.difficulty === "Insane" ? "insane" : "hard"}">${m.difficulty}</span>
+        <span class="m-diff diff-${m.difficulty === "Facile" ? "easy" : m.difficulty === "Moyen" ? "med" : m.difficulty === "Expert" ? "expert" : m.difficulty === "Insane" ? "insane" : "hard"}">${typeof t === "function" ? t("diff." + m.difficulty) : m.difficulty}</span>
       </div>
-      <div class="m-ip">${locked ? "cible verrouillée" : m.ip}${timeLabel ? ` · ⏱ ${timeLabel}` : ""}</div>
+      <div class="m-ip">${locked ? (typeof t === "function" ? t("sidebar.locked") : "cible verrouillée") : m.ip}${timeLabel ? ` · ⏱ ${timeLabel}` : ""}</div>
       <div class="m-steps">${stepEls}</div>
     `;
     if (!locked) {
@@ -1102,6 +1102,7 @@ function boot() {
   if (location.hash === "#editor") openEditor();
   if (location.hash.startsWith("#machine=")) loadSharedMachine(location.hash.slice("#machine=".length));
   if (location.hash === "#en" && typeof setLang === "function") setLang("en");
+  if (location.hash === "#enplay" && typeof setLang === "function") setTimeout(() => { setLang("en"); inputEl.value = "use nimbus"; submitInput(); inputEl.value = "nmap 10.10.11.21"; submitInput(); }, 700);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !editorEl("editor-modal").classList.contains("hidden")) closeEditor(); });
 
   resetSessionToAttacker();

@@ -1203,6 +1203,23 @@ section("DSL d'exploits : exploitMatches", () => {
   // ...et restent entièrement jouables (rejoué par le solveur + la boucle des 12 machines plus haut)
 });
 
+// ── 31. i18n moteur : messages de jeu bilingues (bilang / briefing EN) ───────
+section("i18n moteur : messages bilingues", () => {
+  const ctxFr = freshContext();
+  unlockAll(ctxFr);
+  const fr = run(ctxFr, "use nimbus");
+  assert(/Cible active/.test(fr.text) && /site vitrine/.test(fr.text), "en FR : « Cible active » + briefing FR");
+
+  const ctxEn = freshContext();
+  vm.runInContext("var LANG='en';", ctxEn);
+  unlockAll(ctxEn);
+  const en = run(ctxEn, "use nimbus");
+  assert(/Active target/.test(en.text) && /showcase site/.test(en.text), "en EN : « Active target » + briefing EN");
+  assert(get(ctxEn, "bilang('a','b')") === "b", "bilang() renvoie l'anglais quand LANG='en'");
+  // repli : sans LANG défini, tout reste en français
+  assert(get(ctxFr, "bilang('a','b')") === "a", "bilang() retombe sur le français sans LANG");
+});
+
 // ── Rapport final ─────────────────────────────────────────────────────────────
 Promise.all(pendingAsync).then(() => {
   console.log(`\n${"─".repeat(60)}`);

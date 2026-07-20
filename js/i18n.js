@@ -15,7 +15,8 @@ const UI_STRINGS = {
     "tip.graph": "Graphe d'attaque", "tip.stack": "Défi buffer overflow (pile)",
     "tip.split": "Panneau journal (split façon tmux)", "tip.lang": "Language / Langue (FR ⇄ EN)",
     "sidebar.machines": "Machines", "sidebar.stepOn": "étape validée", "sidebar.stepOff": "étape restante",
-    "sidebar.badges": "Badges",
+    "sidebar.badges": "Badges", "sidebar.locked": "cible verrouillée",
+    "diff.Facile": "Facile", "diff.Moyen": "Moyen", "diff.Difficile": "Difficile", "diff.Expert": "Expert", "diff.Insane": "Insane",
     "editor.title": "🛠️ Créer une machine",
     "editor.desc": "Décris une machine en JSON (même schéma que <code>machines.js</code>, regex d'exploit en chaînes). « Valider &amp; charger » la teste dans le vrai moteur et l'ajoute à la liste (bac à sable, non sauvegardée). « Télécharger .json » l'exporte pour l'intégrer à <code>machines.js</code>.",
     "editor.load": "Valider & charger", "editor.generate": "🎲 Générer", "editor.share": "Lien de partage",
@@ -46,7 +47,8 @@ const UI_STRINGS = {
     "tip.graph": "Attack graph", "tip.stack": "Buffer overflow challenge (stack)",
     "tip.split": "Journal panel (tmux-style split)", "tip.lang": "Language / Langue (FR ⇄ EN)",
     "sidebar.machines": "Machines", "sidebar.stepOn": "step done", "sidebar.stepOff": "step remaining",
-    "sidebar.badges": "Badges",
+    "sidebar.badges": "Badges", "sidebar.locked": "locked target",
+    "diff.Facile": "Easy", "diff.Moyen": "Medium", "diff.Difficile": "Hard", "diff.Expert": "Expert", "diff.Insane": "Insane",
     "editor.title": "🛠️ Create a machine",
     "editor.desc": "Describe a machine in JSON (same schema as <code>machines.js</code>, exploit regexes as strings). “Validate &amp; load” tests it in the real engine and adds it to the list (sandbox, not saved). “Download .json” exports it to drop into <code>machines.js</code>.",
     "editor.load": "Validate & load", "editor.generate": "🎲 Generate", "editor.share": "Share link",
@@ -83,5 +85,6 @@ function setLang(lang) {
   applyI18n();
   const btn = document.getElementById("lang-toggle");
   if (btn) btn.textContent = LANG === "fr" ? "FR" : "EN";
+  if (typeof renderSidebar === "function") renderSidebar(); // libellés dynamiques (verrouillé, difficulté)
 }
 function toggleLang() { setLang(LANG === "fr" ? "en" : "fr"); }
