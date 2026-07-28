@@ -163,6 +163,7 @@ const SESSION = {
   sandbox: false,        // true en mode bac à sable libre (FS custom, sans flag ni score)
   firewall: null,        // { id, policy, rules } — scénario de pare-feu en cours, ou null
   fsHistory: { past: [], future: [] }, // time-machine : snapshots du FS courant (undo/redo)
+  cloudRole: null,       // rôle IAM assumé via `cloudctl assume-role <token>` (fuite SSRF), ou null
 };
 
 // ── Time-machine du FS : undo/redo de l'état du système de fichiers courant ──
@@ -474,6 +475,13 @@ function applyFilter(text, stage) {
       const idx = parseInt(m[1], 10) - 1;
       return lines.map((l) => l.trim().split(/\s+/)[idx] || "").join("\n");
     }
+    // base64url : encodage/décodage sans dépendance (RFC 4648 §5, sans padding), appliqué
+    // au texte entier reçu du pipe — utile pour forger un JWT segment par segment
+    // (ex. `echo -n '{"alg":"none",...}' | base64url`).
+    case "base64url":
+      return bytesToB64url(utf8ToBytes(text));
+    case "base64urld":
+      try { return bytesToUtf8(b64urlToBytes(text.trim())); } catch { return "base64urld: entrée invalide (pas du base64url propre)"; }
     default:
       return text;
   }
@@ -667,7 +675,7 @@ function runPipelineCore(line) {
 const KNOWN_COMMANDS = [
   "help", "clear", "machines", "use", "reset", "hint", "insane", "progress", "badges", "records", "writeup",
   "challenges", "challenge", "chint", "submit", "hashcat", "daily", "score", "history",
-  "whoami", "id", "groups", "pwd", "ls", "cd", "cat", "find", "echo", "nmap", "curl",
+  "whoami", "id", "groups", "pwd", "ls", "cd", "cat", "find", "getcap", "echo", "nmap", "curl",
   "ftp", "ssh", "sudo", "crontab", "exit", "man", "docker", "export", "import",
   "dir", "type", "net", "schtasks", "icacls", "vim", "nc", "arp", "cloudctl", "generate", "replay", "sandbox",
   "blueteam", "incident", "answer", "bthint", "firewall", "iptables",
@@ -743,9 +751,10 @@ const MAN_PAGES = {
   cd: "NAME\n    cd - changer de répertoire\n\nSYNOPSIS\n    cd [chemin]\n\nDESCRIPTION\n    Change le répertoire de travail courant. Accepte les chemins relatifs,\n    absolus, '..' et '~' (répertoire personnel).",
   cat: "NAME\n    cat - afficher un fichier\n\nSYNOPSIS\n    cat <fichier> [fichier2 ...]\n\nDESCRIPTION\n    Affiche le contenu d'un ou plusieurs fichiers. Respecte les permissions\n    (un fichier root-only ne sera lisible qu'en tant que root).",
   find: "NAME\n    find - rechercher des fichiers\n\nSYNOPSIS\n    find <chemin> [-name '<motif>']\n    find / -perm -4000 -type f\n\nDESCRIPTION\n    Recherche des fichiers/dossiers sous <chemin>, filtrés par -name si\n    fourni ('*' est un joker). La variante -perm -4000 -type f recherche\n    les binaires SUID (utile en énumération de privesc).",
+  getcap: "NAME\n    getcap - énumère les capabilities Linux\n\nSYNOPSIS\n    getcap -r /\n\nDESCRIPTION\n    Liste les binaires du système auxquels une capability (ex. cap_setuid+ep)\n    a été accordée. Une alternative au bit SUID classique : moins visible pour\n    `find -perm -4000`, mais tout aussi exploitable pour l'élévation de\n    privilèges si la capability est mal choisie.",
   echo: "NAME\n    echo - afficher du texte\n\nSYNOPSIS\n    echo <texte>\n    echo <texte> > fichier\n    echo <texte> >> fichier\n\nDESCRIPTION\n    Affiche le texte donné, ou l'écrit dans un fichier (> écrase, >> ajoute\n    à la fin). Supporte la variable spéciale $? (code de sortie de la\n    dernière commande).",
   nmap: "NAME\n    nmap - scanner de ports\n\nSYNOPSIS\n    nmap <ip>\n\nDESCRIPTION\n    Scanne les ports ouverts d'une machine cible et affiche les services\n    détectés. Première étape obligatoire (recon) sur chaque machine.",
-  curl: "NAME\n    curl - client HTTP\n\nSYNOPSIS\n    curl <url>\n\nDESCRIPTION\n    Récupère le contenu d'une page web exposée par une machine cible, si le\n    port HTTP correspondant est ouvert.",
+  curl: "NAME\n    curl - client HTTP\n\nSYNOPSIS\n    curl <url>\n    curl -d '<champ>=<valeur>' <url>\n    curl -F 'file=@<fichier>' <url>\n    curl -H '<En-tête>: <valeur>' <url>\n\nDESCRIPTION\n    Récupère le contenu d'une page web exposée par une machine cible, si le\n    port HTTP correspondant est ouvert. -d envoie une requête POST (ex.\n    formulaire de connexion). -F envoie un fichier (upload). -H ajoute un\n    en-tête (ex. Authorization: Bearer <jeton>), répétable.",
   ftp: "NAME\n    ftp - client FTP\n\nSYNOPSIS\n    ftp <ip>\n\nDESCRIPTION\n    Se connecte à un service FTP exposé (souvent en anonyme) et rapatrie\n    les fichiers disponibles dans ~/loot/<machine>-ftp/.",
   ssh: "NAME\n    ssh - connexion distante\n\nSYNOPSIS\n    ssh <utilisateur>@<ip> [-p <port>]\n\nDESCRIPTION\n    Ouvre une session shell sur une machine cible avec les identifiants\n    fournis. Demande le mot de passe à la ligne suivante.",
   sudo: "NAME\n    sudo - exécuter en tant que root\n\nSYNOPSIS\n    sudo -l\n    sudo <commande>\n\nDESCRIPTION\n    sudo -l liste les commandes autorisées en root pour l'utilisateur\n    courant. Les tentatives non autorisées sont comptées : après 3 essais\n    infructueux, le compte est verrouillé jusqu'à une reconnexion ssh.",
@@ -1034,6 +1043,7 @@ const PRIVESC_CVSS = {
   "suid-binary": { score: "7.8", vector: "AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H", label: "Élévation via binaire SUID mal configuré (GTFOBins)" },
   "schtask-writable": { score: "8.4", vector: "AV:L/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H", label: "Élévation via tâche planifiée Windows inscriptible" },
   "docker-group": { score: "8.8", vector: "AV:L/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H", label: "Élévation via appartenance au groupe docker (montage du disque hôte)" },
+  "capability": { score: "7.8", vector: "AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H", label: "Élévation via capability Linux (cap_setuid) sur un binaire" },
 };
 function cveFiche(machine) {
   const c = PRIVESC_CVSS[machine.privesc.type] || { score: "—", vector: "n/a", label: machine.privesc.type };
@@ -1831,9 +1841,12 @@ const AG_PRIVESC_LABELS = {
   "sudo-gtfobins": "sudo GTFOBins", "sudo-direct": "sudo GTFOBins",
   "cron-writable": "cron world-writable", "suid-binary": "binaire SUID",
   "schtask-writable": "tâche planifiée SYSTEM", "docker-group": "groupe docker",
+  "capability": "capability Linux (cap_setuid)",
 };
 function agAccessLabel(m) {
   if (m.upload) return "upload webshell";
+  if (m.ssrf) return "SSRF → creds cloud (métadonnées)";
+  if (m.jwtAuth) return "JWT alg:none forgé";
   if (m.cloud) return Object.values(m.cloud.buckets || {}).some((b) => b.deploy) ? "bucket writable (RCE)" : "bucket public";
   if (m.sqli) return "SQLi bypass login";
   if (m.internal) return "pivot ssh -L";
@@ -2329,6 +2342,7 @@ function dispatch(cmd, args, rawFirst) {
     case "cd": return cmdCd(args);
     case "cat": return cmdCat(args);
     case "find": return cmdFind(args, rawFirst);
+    case "getcap": return cmdGetcap(args, rawFirst);
     case "echo": return cmdEcho(args, rawFirst);
     case "nmap": return cmdNmap(args);
     case "curl": return cmdCurl(args);
@@ -2370,6 +2384,16 @@ function dispatch(cmd, args, rawFirst) {
     default: {
       if (SESSION.ctx !== "attacker") {
         const machine = getMachine(SESSION.ctx);
+        if (machine.privesc.type === "capability" && exploitMatches(machine.privesc, rawFirst)) {
+          SESSION.user = "root";
+          SESSION.cwd = parentOf(machine.rootFile.path);
+          GAME.progress[machine.id].privesc = true;
+          addScore(250);
+          persistSave();
+          if (typeof renderSidebar === "function") renderSidebar();
+          toast(bilang(`🛠️ Élévation de privilèges réussie sur ${machine.name} (+250 pts)`, `🛠️ Privilege escalation succeeded on ${machine.name} (+250 pts)`));
+          return out(machine.privesc.enterMsg, "t-ok");
+        }
         if (machine.privesc.type === "schtask-writable" && machine.privesc.escalateRegex.test(rawFirst.trim())) {
           if (!SESSION.cronPlanted[machine.id] || !SESSION.cronTicked[machine.id]) {
             return out("Le fichier n'existe pas (encore) à cet emplacement avec les nouveaux privilèges. As-tu piégé la tâche planifiée ?", "t-err");
@@ -2407,6 +2431,8 @@ const BRIEFING_EN = {
   nexus: "A web file manager with an upload form. Validation of uploaded files seems limited to the extension.",
   citadel: "An internal database server, not directly reachable. You must pivot from an already-compromised host on the same network.",
   tempest: "A continuous-deployment platform. One of its artifact buckets is not only public... but also writable, and its contents are deployed automatically.",
+  parallax: "An internal portal that generates previews of shared links (Slack-bot style). The proxy fetching those links seems a bit too trusting about what it's willing to contact.",
+  sentry: "An internal admin dashboard protected by an authentication token (JWT). The token verification code smells like legacy that's never been revisited since it shipped.",
   axiom: "An internal CI/CD runner that builds the company's container images. The service account running the pipelines has local access it shouldn't have.",
 };
 function machineBriefing(m) { return (bilang("fr", "en") === "en" && BRIEFING_EN[m.id]) ? BRIEFING_EN[m.id] : m.briefing; }
@@ -2418,11 +2444,11 @@ const HELP_FR =
   "Pare-feu : firewall [<id>|reset|exit], iptables -L | -A/-I/-D INPUT ... | -P INPUT ACCEPT|DROP | -F\n" +
   "Phishing : phishing (ou inbox), mail <id>, report <id> <question> <valeur>, phhint <id> <question>\n" +
   "Reverse : malware (liste), strings <id>, disas <id>, resolve <id> <question> <valeur>, rehint <id> <question>\n" +
-  "Reconnaissance : nmap <ip>, nmap <cidr> (balayage de sous-réseau via un pivot), arp -a, curl <url>, ftp <ip>, nc <ip> <port>, cloudctl ls|get|cp\n" +
-  "Accès : ssh <user>@<ip> [-p <port>], curl -F \"file=@<webshell>\" <url> (upload), ssh -L <lport>:<hôte_interne>:<port> <user>@<pivot> (tunnel/pivot)\n" +
-  "Système (une fois connecté ou en local) : ls [-la], cd, pwd, cat, find, echo, vim <fichier>, whoami, id, sudo -l, sudo <cmd>, crontab -l, docker ps, undo/redo (annuler/rétablir une modif du FS)\n" +
+  "Reconnaissance : nmap <ip>, nmap <cidr> (balayage de sous-réseau via un pivot), arp -a, curl <url>, ftp <ip>, nc <ip> <port>, cloudctl ls|get|cp|assume-role\n" +
+  "Accès : ssh <user>@<ip> [-p <port>], curl -F \"file=@<webshell>\" <url> (upload), ssh -L <lport>:<hôte_interne>:<port> <user>@<pivot> (tunnel/pivot), curl \"<url>?param=<url_interne>\" (SSRF), curl -H \"Authorization: Bearer <jwt>\" <url> (jeton d'authentification)\n" +
+  "Système (une fois connecté ou en local) : ls [-la], cd, pwd, cat, find, getcap -r / (capabilities Linux), echo [-n], vim <fichier>, whoami, id, sudo -l, sudo <cmd>, crontab -l, docker ps, undo/redo (annuler/rétablir une modif du FS)\n" +
   "Windows (machine cible Windows) : dir, type, net user, net localgroup administrators, schtasks /query, icacls <fichier>\n" +
-  "Filtres en pipe : grep, wc -l, sort [-u], head, tail, cut, awk '{print $N}'\n" +
+  "Filtres en pipe : grep, wc -l, sort [-u], head, tail, cut, awk '{print $N}', base64url / base64urld (encodage sans dépendance)\n" +
   "Shell : variables $USER/$HOME/$PWD/$HOSTNAME/$UID/$? (${VAR} aussi), substitution $(commande), redirections > >> 2> &> 2>/dev/null\n" +
   "Bac à sable : generate [seed] (machine aléatoire jouable), sandbox (FS libre pour s'entraîner, bouton 🧪), éditeur de machines (🛠️), replay (rejoue ta session, ▶️)\n" +
   "Visualisation : graph [machine] (graphe d'attaque, bouton 🗺️), stack (défi buffer overflow schématisé, bouton 🧠)\n" +
@@ -2436,11 +2462,11 @@ const HELP_EN =
   "Firewall : firewall [<id>|reset|exit], iptables -L | -A/-I/-D INPUT ... | -P INPUT ACCEPT|DROP | -F\n" +
   "Phishing : phishing (or inbox), mail <id>, report <id> <question> <value>, phhint <id> <question>\n" +
   "Reverse eng. : malware (list), strings <id>, disas <id>, resolve <id> <question> <value>, rehint <id> <question>\n" +
-  "Recon : nmap <ip>, nmap <cidr> (subnet sweep via a pivot), arp -a, curl <url>, ftp <ip>, nc <ip> <port>, cloudctl ls|get|cp\n" +
-  "Access : ssh <user>@<ip> [-p <port>], curl -F \"file=@<webshell>\" <url> (upload), ssh -L <lport>:<internal_host>:<port> <user>@<pivot> (tunnel/pivot)\n" +
-  "System (once connected or local) : ls [-la], cd, pwd, cat, find, echo, vim <file>, whoami, id, sudo -l, sudo <cmd>, crontab -l, docker ps, undo/redo (undo/redo an FS change)\n" +
+  "Recon : nmap <ip>, nmap <cidr> (subnet sweep via a pivot), arp -a, curl <url>, ftp <ip>, nc <ip> <port>, cloudctl ls|get|cp|assume-role\n" +
+  "Access : ssh <user>@<ip> [-p <port>], curl -F \"file=@<webshell>\" <url> (upload), ssh -L <lport>:<internal_host>:<port> <user>@<pivot> (tunnel/pivot), curl \"<url>?param=<internal_url>\" (SSRF), curl -H \"Authorization: Bearer <jwt>\" <url> (auth token)\n" +
+  "System (once connected or local) : ls [-la], cd, pwd, cat, find, getcap -r / (Linux capabilities), echo [-n], vim <file>, whoami, id, sudo -l, sudo <cmd>, crontab -l, docker ps, undo/redo (undo/redo an FS change)\n" +
   "Windows (Windows target) : dir, type, net user, net localgroup administrators, schtasks /query, icacls <file>\n" +
-  "Pipe filters : grep, wc -l, sort [-u], head, tail, cut, awk '{print $N}'\n" +
+  "Pipe filters : grep, wc -l, sort [-u], head, tail, cut, awk '{print $N}', base64url / base64urld (dependency-free encoding)\n" +
   "Shell : variables $USER/$HOME/$PWD/$HOSTNAME/$UID/$? (also ${VAR}), substitution $(command), redirections > >> 2> &> 2>/dev/null\n" +
   "Sandbox : generate [seed] (random playable machine), sandbox (free FS to practise, 🧪 button), machine editor (🛠️), replay (replay your session, ▶️)\n" +
   "Visualisation : graph [machine] (attack graph, 🗺️ button), stack (schematic buffer-overflow challenge, 🧠 button)\n" +
@@ -2724,6 +2750,23 @@ function cmdFind(args, rawFirst) {
     .filter((k) => !re || re.test(baseOf(k)));
   return out(results.sort().join("\n"));
 }
+// getcap : énumération des capabilities Linux (alternative au bit SUID classique).
+// Une capability comme cap_setuid+ep accorde un privilège précis à un binaire sans
+// lui donner tous les droits root — technique de privesc distincte de suid-binary.
+function cmdGetcap(args, rawFirst) {
+  if (SESSION.ctx === "attacker") return out("getcap: rien à énumérer ici (aucune cible).", "t-hint");
+  const machine = getMachine(SESSION.ctx);
+  if (machine.osType === "windows") {
+    return out("'getcap' n'est pas reconnu en tant que commande interne ou externe, un programme exécutable ou un fichier de commandes.", "t-err");
+  }
+  if (/^getcap\s+-r\s+\/(\s+2>\s*\/dev\/null)?$/.test(rawFirst.replace(/\s+/g, " ").trim())) {
+    if (machine.targetFS.capabilities && machine.targetFS.capabilities.length) {
+      return out(machine.targetFS.capabilities.join("\n"));
+    }
+    return out("");
+  }
+  return out("usage: getcap -r /", "t-err");
+}
 // Vérifie si le fichier écrit (via echo >> ou vim) correspond au script de la tâche
 // planifiée piégeable de la machine, et si son contenu contient désormais la charge utile
 // attendue. Générique : utilisé par cmdEcho ET par vim, pour que les deux offrent le même chemin.
@@ -2760,10 +2803,33 @@ function cmdCloudctl(args) {
         "  cloudctl ls                      liste les buckets accessibles\n" +
         "  cloudctl ls s3://<bucket>        liste le contenu d'un bucket\n" +
         "  cloudctl get s3://<bucket>/<clé>  télécharge/affiche un objet\n" +
-        "  cloudctl cp <fichier> s3://<bucket>/  téléverse un objet (si autorisé)",
+        "  cloudctl cp <fichier> s3://<bucket>/  téléverse un objet (si autorisé)\n" +
+        "  cloudctl assume-role <token>      assume un rôle IAM à partir d'un jeton de sécurité temporaire",
     );
   }
   const clouds = cloudMachines();
+  // Un bucket privé peut être protégé par un rôle IAM (`requiresRole`) plutôt que
+  // par un simple flag public/privé : il devient lisible une fois ce rôle assumé
+  // (typiquement après une fuite d'identifiants temporaires via SSRF).
+  const bucketDenied = (bucket, uri) => {
+    if (bucket.public) return null;
+    if (bucket.requiresRole) {
+      if (SESSION.cloudRole === bucket.requiresRole) return null;
+      return `cloudctl: AccessDenied — s3://${uri} nécessite le rôle IAM "${bucket.requiresRole}" (assume-role requis).`;
+    }
+    return `cloudctl: AccessDenied — s3://${uri} est privé.`;
+  };
+  if (sub === "assume-role") {
+    const token = args[1];
+    if (!token) return out("usage: cloudctl assume-role <token>", "t-err");
+    for (const m of clouds) {
+      if (m.cloud.assumableRole && m.cloud.assumableRole.token === token) {
+        SESSION.cloudRole = m.cloud.assumableRole.role;
+        return out(`Rôle assumé avec succès : ${m.cloud.assumableRole.role} (identifiants temporaires acceptés).`, "t-ok");
+      }
+    }
+    return out("cloudctl: assume-role refusé — jeton invalide ou expiré.", "t-err");
+  }
   if (sub === "ls") {
     const uri = args[1];
     if (!uri) {
@@ -2780,7 +2846,8 @@ function cmdCloudctl(args) {
     if (!s3) return out(`cloudctl: URI invalide (${uri}) — attendu s3://<bucket>[/<clé>]`, "t-err");
     const hit = findBucket(s3.bucket);
     if (!hit) return out(`cloudctl: bucket introuvable : ${s3.bucket}`, "t-err");
-    if (!hit.bucket.public) return out(`cloudctl: AccessDenied — pas d'autorisation de lister s3://${s3.bucket} (bucket privé).`, "t-err");
+    const denied = bucketDenied(hit.bucket, s3.bucket);
+    if (denied) return out(denied, "t-err");
     const files = Object.keys(hit.bucket.files);
     return out(files.map((f) => `s3://${s3.bucket}/${f}`).join("\n") || "(bucket vide)");
   }
@@ -2789,7 +2856,8 @@ function cmdCloudctl(args) {
     if (!s3 || !s3.key) return out("usage: cloudctl get s3://<bucket>/<clé>", "t-err");
     const hit = findBucket(s3.bucket);
     if (!hit) return out(`cloudctl: bucket introuvable : ${s3.bucket}`, "t-err");
-    if (!hit.bucket.public) return out(`cloudctl: AccessDenied — s3://${s3.bucket} est privé.`, "t-err");
+    const denied = bucketDenied(hit.bucket, s3.bucket);
+    if (denied) return out(denied, "t-err");
     const content = hit.bucket.files[s3.key];
     if (content === undefined) return out(`cloudctl: objet introuvable : s3://${s3.bucket}/${s3.key}`, "t-err");
     return out(content);
@@ -2909,7 +2977,8 @@ function handleVimInput(line) {
 // désormais gérés en amont par le parser (parseWords + applyRedirects) : echo se
 // contente d'afficher ses arguments déjà développés.
 function cmdEcho(args) {
-  return out(args.join(" "));
+  const filtered = args[0] === "-n" ? args.slice(1) : args;
+  return out(filtered.join(" "));
 }
 
 // ── Sous-réseau interne simulé (découverte multi-hôtes via un pivot) ─────────
@@ -3021,6 +3090,16 @@ function cmdCurl(args) {
   const fIdx = args.findIndex((a) => a === "-F" || a === "--form");
   const isUpload = fIdx >= 0;
   const formData = isUpload ? (args[fIdx + 1] || "") : null;
+  // En-têtes HTTP (curl -H "Nom: valeur"), potentiellement répétés. Utilisé pour
+  // l'authentification par jeton (Authorization: Bearer <jwt>).
+  const headers = {};
+  args.forEach((a, i) => {
+    if (a === "-H" || a === "--header") {
+      const raw = args[i + 1] || "";
+      const sep = raw.indexOf(":");
+      if (sep > 0) headers[raw.slice(0, sep).trim().toLowerCase()] = raw.slice(sep + 1).trim();
+    }
+  });
   const urlArg = args.find((a) => a.startsWith("http"));
   if (!urlArg) return out("curl: aucune URL fournie", "t-err");
   const u = parseUrl(urlArg);
@@ -3031,6 +3110,31 @@ function cmdCurl(args) {
   if (!isReachable(machine)) return unreachableMsg(machine);
   const httpPort = machine.ports.find((p) => p.service === "http");
   if (!httpPort || httpPort.port !== u.port) return out(`curl: (7) Échec de connexion à ${u.ip} port ${u.port} : Connexion refusée`, "t-err");
+
+  // Authentification par jeton (JWT) mal vérifiée : le serveur ne valide jamais la
+  // signature quand l'en-tête du jeton annonce "alg":"none" (vraie faille classique,
+  // pas de simulation de crypto — la "vérification" ne regarde que le contenu déclaré).
+  if (machine.jwtAuth) {
+    const ja = machine.jwtAuth;
+    const qIdx = u.path.indexOf("?");
+    const basePath = qIdx >= 0 ? u.path.slice(0, qIdx) : u.path;
+    if (basePath === ja.path) {
+      const authHeader = headers[(ja.header || "authorization").toLowerCase()];
+      if (!authHeader) return out(ja.missingMsg || `curl: (22) Erreur HTTP 401 sur ${u.path} — en-tête d'autorisation manquant.`, "t-err");
+      const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+      const parts = token.split(".");
+      let ok = false;
+      if (parts.length >= 2) {
+        try {
+          const header = JSON.parse(bytesToUtf8(b64urlToBytes(parts[0])));
+          const payload = JSON.parse(bytesToUtf8(b64urlToBytes(parts[1])));
+          if (/^none$/i.test(header.alg) && payload[ja.requireClaim.key] === ja.requireClaim.value) ok = true;
+        } catch { /* jeton malformé -> refusé */ }
+      }
+      if (ok) return out(ja.successBody, "t-ok");
+      return out(ja.deniedMsg || `curl: (22) Erreur HTTP 403 sur ${u.path} — jeton refusé.`, "t-err");
+    }
+  }
 
   // Upload de fichier (curl -F "file=@webshell.php") sur un formulaire mal filtré.
   if (isUpload) {
@@ -3100,6 +3204,27 @@ function cmdCurl(args) {
         aa.user,
         `Connexion entrante reçue sur le port ${cbPort} depuis ${machine.ip} !\n`,
       );
+    }
+  }
+
+  // SSRF (Server-Side Request Forgery) : un endpoint applicatif va chercher une URL
+  // arbitraire pour le compte du serveur (ex. génération d'aperçu de lien). Le seul
+  // hôte "intéressant" atteignable est un faux endpoint de métadonnées cloud interne
+  // (169.254.169.254, façon AWS) qui fuit des identifiants IAM temporaires — le trafic
+  // sortant réel vers Internet reste bloqué (`blockedMsg`), ce qui recentre l'exercice
+  // sur le pivot SSRF -> métadonnées plutôt que sur une simulation réseau générale.
+  if (machine.ssrf) {
+    const sr = machine.ssrf;
+    const qIdx = u.path.indexOf("?");
+    const basePath = qIdx >= 0 ? u.path.slice(0, qIdx) : u.path;
+    if (basePath === sr.path) {
+      const query = qIdx >= 0 ? u.path.slice(qIdx + 1) : "";
+      const m = query.match(new RegExp(`(?:^|&)${sr.param}=(.*)$`));
+      const target = m ? decodeURIComponent(m[1]).trim() : "";
+      if (!target) return out(`usage : curl "http://${u.ip}${sr.path}?${sr.param}=<url>"`, "t-err");
+      const content = sr.responses[target];
+      if (content !== undefined) return out(content);
+      return out(sr.blockedMsg || "Aperçu indisponible pour cette URL.", "t-hint");
     }
   }
 

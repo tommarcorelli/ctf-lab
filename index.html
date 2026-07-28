@@ -8,78 +8,215 @@
 <meta name="description" content="Mini plateforme façon RootMe/HackTheBox : terminal simulé en vanilla JS, 100% client, sans backend.">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/neon.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 </head>
-<body>
+<body data-view="home" data-home="accueil">
+
+  <div id="boot" class="boot" aria-hidden="true">
+    <div class="boot-inner">
+      <div class="boot-brand">&gt;_ CTF<span>LAB</span></div>
+      <pre id="boot-log" class="boot-log"></pre>
+      <div class="boot-bar"><span id="boot-bar-fill"></span></div>
+      <div class="boot-skip">[ clic / touche pour passer ]</div>
+    </div>
+  </div>
 
   <div id="toasts" class="toasts"></div>
+  <div id="hud-bg" class="hud-bg" aria-hidden="true">
+    <div class="hud-grid"></div>
+    <span class="orb orb-a"></span>
+    <span class="orb orb-b"></span>
+    <span class="orb orb-c"></span>
+    <div class="hud-scan"></div>
+    <div class="hud-noise"></div>
+  </div>
   <canvas id="particles-canvas" class="particles-canvas"></canvas>
 
   <header class="app-header">
-    <div class="brand">
-      <span class="brand-mark">&gt;_</span>
-      <span class="brand-name">CTF<span class="accent">LAB</span></span>
+    <div class="brand" data-nav-home="accueil" data-testid="brand-home">
+      <span class="brand-logo-txt"><span class="bl-prompt">&gt;_</span> CTF<span class="bl-lab">LAB</span></span>
     </div>
+    <nav class="top-nav">
+      <button class="nav-link active" type="button" data-nav-home="accueil" data-testid="nav-accueil">Accueil</button>
+      <button class="nav-link" type="button" data-nav-home="hub" data-testid="nav-hub">HUB</button>
+    </nav>
     <div class="header-sub" data-i18n="app.subtitle">Recon → Accès initial → Élévation de privilèges → Flag</div>
-    <div class="xp-wrap" title="Niveau et expérience">
-      <div id="xp-label" class="xp-label">Niveau 1 · 0/500 XP</div>
-      <div class="xp-bar"><div id="xp-fill" class="xp-fill" style="width:0%"></div></div>
+
+    <div class="hud-stats" title="Niveau et expérience">
+      <div class="xp-block">
+        <div id="xp-label" class="xp-label">Niveau 1 · 0/500 XP</div>
+        <div class="xp-bar"><div id="xp-fill" class="xp-fill" style="width:0%"></div></div>
+      </div>
+      <div id="score-status" class="score-status">Score : 0 pts</div>
     </div>
-    <div id="score-status" class="score-status">Score : 0 pts</div>
-    <button id="theme-toggle" class="icon-toggle" type="button" data-i18n-title="tip.theme" title="Changer de thème">🌙</button>
-    <button id="sound-toggle" class="icon-toggle" type="button" data-i18n-title="tip.sound" title="Son à la capture d'un flag">🔈</button>
-    <button id="ambient-toggle" class="icon-toggle" type="button" data-i18n-title="tip.ambient" title="Ambiance sonore continue (générée, varie selon la difficulté)">🎧</button>
-    <button id="voice-toggle" class="icon-toggle" type="button" data-i18n-title="tip.voice" title="Narration vocale des indices et messages importants">🗣️</button>
-    <button id="fx-toggle" class="icon-toggle" type="button" data-i18n-title="tip.fx" title="Effets visuels (particules, glow)">✨</button>
-    <button id="editor-toggle" class="icon-toggle" type="button" data-i18n-title="tip.editor" title="Créer une machine (éditeur)">🛠️</button>
-    <button id="replay-toggle" class="icon-toggle" type="button" data-i18n-title="tip.replay" title="Rejouer la session (replay)">▶️</button>
-    <button id="sandbox-toggle" class="icon-toggle" type="button" data-i18n-title="tip.sandbox" title="Bac à sable libre (FS custom)">🧪</button>
-    <button id="graph-toggle" class="icon-toggle" type="button" data-i18n-title="tip.graph" title="Graphe d'attaque">🗺️</button>
-    <button id="stack-toggle" class="icon-toggle" type="button" data-i18n-title="tip.stack" title="Défi buffer overflow (pile)">🧠</button>
-    <button id="split-toggle" class="icon-toggle" type="button" data-i18n-title="tip.split" title="Panneau journal (split façon tmux)">▦</button>
-    <button id="lang-toggle" class="icon-toggle" type="button" data-i18n-title="tip.lang" title="Language / Langue">FR</button>
+
+    <div class="hud-menu" data-menu>
+      <button class="menu-btn" type="button" aria-haspopup="true" aria-expanded="false"><span class="menu-btn-ico">🧰</span> <span data-i18n="menu.tools">Outils</span> <span class="caret">▾</span></button>
+      <div class="menu-pop">
+        <div class="menu-row"><button id="editor-toggle" class="icon-toggle menu-ico" type="button" data-i18n-title="tip.editor" title="Créer une machine (éditeur)">🛠️</button><span class="menu-lbl" data-i18n="menu.editor">Créer une machine</span></div>
+        <div class="menu-row"><button id="replay-toggle" class="icon-toggle menu-ico" type="button" data-i18n-title="tip.replay" title="Rejouer la session (replay)">▶️</button><span class="menu-lbl" data-i18n="menu.replay">Replay de session</span></div>
+        <div class="menu-row"><button id="sandbox-toggle" class="icon-toggle menu-ico" type="button" data-i18n-title="tip.sandbox" title="Bac à sable libre (FS custom)">🧪</button><span class="menu-lbl" data-i18n="menu.sandbox">Bac à sable libre</span></div>
+        <div class="menu-row"><button id="graph-toggle" class="icon-toggle menu-ico" type="button" data-i18n-title="tip.graph" title="Graphe d'attaque">🗺️</button><span class="menu-lbl" data-i18n="menu.graph">Graphe d'attaque</span></div>
+        <div class="menu-row"><button id="stack-toggle" class="icon-toggle menu-ico" type="button" data-i18n-title="tip.stack" title="Défi buffer overflow (pile)">🧠</button><span class="menu-lbl" data-i18n="menu.stack">Buffer overflow</span></div>
+        <div class="menu-row"><button id="split-toggle" class="icon-toggle menu-ico" type="button" data-i18n-title="tip.split" title="Panneau journal (split façon tmux)">▦</button><span class="menu-lbl" data-i18n="menu.split">Journal (split)</span></div>
+      </div>
+    </div>
+
+    <div class="hud-menu" data-menu>
+      <button class="menu-btn" type="button" aria-haspopup="true" aria-expanded="false"><span class="menu-btn-ico">⚙️</span> <span data-i18n="menu.settings">Réglages</span> <span class="caret">▾</span></button>
+      <div class="menu-pop">
+        <div class="menu-row"><button id="theme-toggle" class="icon-toggle menu-ico" type="button" data-i18n-title="tip.theme" title="Changer de thème">🌙</button><span class="menu-lbl" data-i18n="menu.theme">Thème</span></div>
+        <div class="menu-row"><button id="sound-toggle" class="icon-toggle menu-ico" type="button" data-i18n-title="tip.sound" title="Son à la capture d'un flag">🔈</button><span class="menu-lbl" data-i18n="menu.sound">Son (capture de flag)</span></div>
+        <div class="menu-row"><button id="ambient-toggle" class="icon-toggle menu-ico" type="button" data-i18n-title="tip.ambient" title="Ambiance sonore continue (générée, varie selon la difficulté)">🎧</button><span class="menu-lbl" data-i18n="menu.ambient">Ambiance sonore</span></div>
+        <div class="menu-row"><button id="voice-toggle" class="icon-toggle menu-ico" type="button" data-i18n-title="tip.voice" title="Narration vocale des indices et messages importants">🗣️</button><span class="menu-lbl" data-i18n="menu.voice">Narration vocale</span></div>
+        <div class="menu-row"><button id="fx-toggle" class="icon-toggle menu-ico" type="button" data-i18n-title="tip.fx" title="Effets visuels (particules, glow)">✨</button><span class="menu-lbl" data-i18n="menu.fx">Effets visuels</span></div>
+        <div class="menu-row"><button id="lang-toggle" class="icon-toggle menu-ico" type="button" data-i18n-title="tip.lang" title="Language / Langue">FR</button><span class="menu-lbl" data-i18n="menu.lang">Langue</span></div>
+      </div>
+    </div>
   </header>
 
-  <main class="layout">
-    <aside class="sidebar">
-      <h2 data-i18n="sidebar.machines">Machines</h2>
-      <div id="machines-list" class="machines-list"></div>
-      <div class="legend">
-        <div><span class="step on"></span> <span data-i18n="sidebar.stepOn">étape validée</span></div>
-        <div><span class="step"></span> <span data-i18n="sidebar.stepOff">étape restante</span></div>
-      </div>
-      <h2 class="badges-title" data-i18n="sidebar.badges">Badges</h2>
-      <div id="badges-list" class="badges-list"></div>
-    </aside>
+  <main class="app-main">
 
-    <section class="terminal-wrap">
-      <div class="term-titlebar">
-        <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
-        <span class="term-title">kali@ctf-lab: ~</span>
+    <!-- ══ ÉCRAN 1 : ACCUEIL + HUB (reskin néon) ══ -->
+    <section id="home-screen" class="home-screen">
+
+      <!-- ─────────── VUE ACCUEIL ─────────── -->
+      <div id="accueil-view" data-testid="accueil-view">
+        <div class="neon-hero">
+          <div class="hero-left">
+            <div class="hero-logo-txt"><span class="bl-prompt">&gt;_</span> CTF<span class="bl-lab">LAB</span></div>
+            <div class="hero-eyebrow"><span class="dot-live"></span> TERMINAL D'ENTRAÎNEMENT OFFENSIF</div>
+            <h1 class="glitch" data-text="Infiltre. Escalade.">Infiltre. Escalade.<br><span class="grad">Deviens root.</span></h1>
+            <p class="hero-sub">Une plateforme façon HackTheBox, 100&nbsp;% dans ton navigateur. Recon, faille, shell, élévation de privilèges — jusqu'au flag.</p>
+            <div class="hero-actions">
+              <button class="cta-primary" type="button" data-nav-home="hub" data-testid="cta-hub">Accéder au HUB <i class="fa-solid fa-arrow-right"></i></button>
+              <button id="hero-resume" class="cta-ghost" type="button" data-testid="cta-resume"><i class="fa-solid fa-play"></i> <span>Reprendre l'attaque</span></button>
+              <button id="hero-help" class="cta-ghost" type="button" data-cmd="help" data-testid="cta-help">Comment jouer&nbsp;?</button>
+            </div>
+            <div class="hero-stats">
+              <div class="hstat"><span class="hs-n" data-count="0" id="hs-machines">0</span><span class="hs-l">machines</span></div>
+              <div class="hstat"><span class="hs-n hs-green" data-count="0" id="hs-rooted">0</span><span class="hs-l">rootées</span></div>
+              <div class="hstat"><span class="hs-n hs-amber" data-count="0" id="hs-points">0</span><span class="hs-l">points</span></div>
+              <div class="hstat"><span class="hs-n hs-cyan" id="hs-level">Niv. 1</span><span class="hs-l">niveau</span></div>
+            </div>
+          </div>
+          <div class="hero-term" aria-hidden="true">
+            <div class="ht-bar"><span class="ht-dot r"></span><span class="ht-dot y"></span><span class="ht-dot g"></span><span class="ht-title">kali@ctf-lab: ~</span></div>
+            <pre class="ht-body"><code id="hero-typing"></code><span class="ht-caret"></span></pre>
+          </div>
+        </div>
+
+        <!-- C'est quoi le lab -->
+        <div class="section-head">
+          <div class="section-kicker">// C'est quoi le lab</div>
+          <h2 class="section-title">Un vrai bac à sable offensif</h2>
+        </div>
+        <div class="feature-grid">
+          <div class="glass-card" data-testid="feature-terminal">
+            <div class="fc-icon"><i class="fa-solid fa-terminal"></i></div>
+            <h3 class="fc-title">Terminal simulé</h3>
+            <p class="fc-desc">Un shell Linux/Windows entièrement virtuel : <code>nmap</code>, <code>ssh</code>, <code>ftp</code>, pipes, <code>sudo</code>… aucune dépendance, 100&nbsp;% navigateur.</p>
+          </div>
+          <div class="glass-card" data-testid="feature-machines">
+            <div class="fc-icon"><i class="fa-solid fa-server"></i></div>
+            <h3 class="fc-title">14 machines réalistes</h3>
+            <p class="fc-desc">Chaque cible suit 4 chapitres — Recon → Accès initial → Élévation de privilèges → Flag — inspirés de vraies techniques.</p>
+          </div>
+          <div class="glass-card" data-testid="feature-progress">
+            <div class="fc-icon"><i class="fa-solid fa-trophy"></i></div>
+            <h3 class="fc-title">Score & progression</h3>
+            <p class="fc-desc">XP, badges, records de temps et déblocage progressif des cibles. Ta progression est sauvegardée localement.</p>
+          </div>
+        </div>
+
+        <footer class="neon-footer">
+          <div class="foot-brand">&gt;_ <b>CTF LAB</b> — terminal d'entraînement offensif</div>
+          <div class="foot-note">100% client · vanilla JS · aucune donnée envoyée</div>
+        </footer>
       </div>
-      <div id="term-output" class="term-output" role="log" aria-live="polite" aria-relevant="additions"></div>
-      <div class="term-inputline">
-        <span id="prompt-label" class="prompt-label">kali@kali-atk:~$</span>
-        <input id="term-input" class="term-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" autofocus aria-label="Ligne de commande du terminal CTF Lab">
-      </div>
-      <div class="quickbar">
-        <button data-cmd="machines">machines</button>
-        <button data-cmd="hint">hint</button>
-        <button data-cmd="progress">progress</button>
-        <button data-cmd="badges">badges</button>
-        <button data-cmd="records">records</button>
-        <button data-cmd="challenges">challenges</button>
-        <button data-cmd="blueteam">blueteam</button>
-        <button data-cmd="daily">daily</button>
-        <button data-cmd="help">help</button>
-        <button data-cmd="clear">clear</button>
+
+      <!-- ─────────── VUE HUB ─────────── -->
+      <div id="hub-view" data-testid="hub-view">
+        <div class="hub-hero">
+          <h1>Le <span class="grad">HUB</span> des cibles</h1>
+          <p id="home-count">Chargement des cibles…</p>
+        </div>
+
+        <div class="hub-progress">
+          <div class="hp-label"><span id="hub-progress-label">Progression : <b>0/0</b> machines rootées</span></div>
+          <div class="hp-track"><div id="hub-progress-fill" class="hp-fill" style="width:0%"></div></div>
+        </div>
+
+        <div class="hub-toolbar">
+          <div class="search-box">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <input id="hub-search" type="text" placeholder="Rechercher une machine…" autocomplete="off" data-testid="hub-search">
+          </div>
+          <div class="filter-bar">
+            <button class="filter-chip active" type="button" data-cat="all" data-testid="filter-all"><i class="fa-solid fa-layer-group"></i> Toutes</button>
+            <button class="filter-chip" type="button" data-cat="web" data-testid="filter-web"><img src="assets/icon-web.png" alt=""> Web</button>
+            <button class="filter-chip" type="button" data-cat="crypto" data-testid="filter-crypto"><img src="assets/icon-crypto.png" alt=""> Crypto</button>
+            <button class="filter-chip" type="button" data-cat="pwn" data-testid="filter-pwn"><img src="assets/icon-pwn.png" alt=""> Pwn / Binary</button>
+          </div>
+        </div>
+
+        <div id="machines-list" class="machines-list machines-grid" data-testid="hub-grid"></div>
+        <div id="hub-empty" class="hub-empty">Aucune machine ne correspond à ta recherche.</div>
+
+        <div class="home-badges">
+          <h2 class="badges-title" data-i18n="sidebar.badges">Badges</h2>
+          <div id="badges-list" class="badges-list"></div>
+        </div>
       </div>
     </section>
 
-    <aside id="side-pane" class="side-pane hidden">
-      <div class="side-pane-h"><span data-i18n="journal.title">📜 Journal</span><button id="side-clear" class="side-clear" type="button" title="Vider le journal">⌫</button></div>
-      <div id="side-pane-body" class="side-pane-body" role="log" aria-live="polite"></div>
-    </aside>
+    <!-- ══ ÉCRAN 2 : ESPACE DE TRAVAIL — cible en focus ══ -->
+    <section id="work-screen" class="work-screen">
+      <div class="work-topbar">
+        <button id="back-home" class="back-btn" type="button" title="Revenir à la sélection de cibles">← <span data-i18n="workspace.back">Cibles</span></button>
+        <span class="work-icon">💻</span>
+        <span id="work-title" class="work-title">—</span>
+        <span id="work-diff" class="m-diff"></span>
+        <div id="work-steps" class="m-steps work-steps" title="recon → accès → privesc → flag"></div>
+        <span id="work-timer" class="work-timer"></span>
+      </div>
+
+      <div class="work-body layout">
+        <section class="terminal-wrap">
+          <div class="term-titlebar">
+            <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
+            <span class="term-title">kali@ctf-lab: ~</span>
+          </div>
+          <div id="term-output" class="term-output" role="log" aria-live="polite" aria-relevant="additions"></div>
+          <div class="term-inputline">
+            <span id="prompt-label" class="prompt-label">kali@kali-atk:~$</span>
+            <input id="term-input" class="term-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Ligne de commande du terminal CTF Lab">
+          </div>
+          <div class="quickbar">
+            <button data-cmd="machines">machines</button>
+            <button data-cmd="hint">hint</button>
+            <button data-cmd="progress">progress</button>
+            <button data-cmd="badges">badges</button>
+            <button data-cmd="records">records</button>
+            <button data-cmd="challenges">challenges</button>
+            <button data-cmd="blueteam">blueteam</button>
+            <button data-cmd="daily">daily</button>
+            <button data-cmd="help">help</button>
+            <button data-cmd="clear">clear</button>
+          </div>
+        </section>
+
+        <aside id="side-pane" class="side-pane hidden">
+          <div class="side-pane-h"><span data-i18n="journal.title">📜 Journal</span><button id="side-clear" class="side-clear" type="button" title="Vider le journal">⌫</button></div>
+          <div id="side-pane-body" class="side-pane-body" role="log" aria-live="polite"></div>
+        </aside>
+      </div>
+    </section>
   </main>
 
   <div id="editor-modal" class="editor-modal hidden" role="dialog" aria-modal="true" aria-labelledby="editor-title">
@@ -192,6 +329,7 @@
   <script src="js/machines.js"></script>
   <script src="js/engine.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/lab-ui.js"></script>
   <script>
     document.addEventListener("DOMContentLoaded", () => {
       document.querySelectorAll(".quickbar button").forEach((b) => {
@@ -201,7 +339,240 @@
           document.getElementById("term-input").focus();
         });
       });
+
+      // ── Menus déroulants du header (Outils / Réglages) ────────────────────
+      const menus = Array.from(document.querySelectorAll(".hud-menu[data-menu]"));
+      const closeMenus = () => menus.forEach((m) => {
+        m.classList.remove("open");
+        m.querySelector(".menu-btn").setAttribute("aria-expanded", "false");
+      });
+      menus.forEach((menu) => {
+        const mbtn = menu.querySelector(".menu-btn");
+        const pop = menu.querySelector(".menu-pop");
+        pop.addEventListener("click", (e) => e.stopPropagation()); // garder le menu ouvert
+        mbtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const isOpen = menu.classList.contains("open");
+          closeMenus();
+          if (!isOpen) { menu.classList.add("open"); mbtn.setAttribute("aria-expanded", "true"); }
+        });
+      });
+      // Cliquer la ligne (label) déclenche le bouton-icône associé
+      document.querySelectorAll(".menu-row").forEach((row) => {
+        row.addEventListener("click", (e) => {
+          if (e.target.closest(".menu-ico")) return;
+          const ico = row.querySelector(".menu-ico");
+          if (ico) ico.click();
+        });
+      });
+      document.addEventListener("click", closeMenus);
+      document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenus(); });
+      // Ouverture par lien profond (utile pour la revue/capture : #open=settings)
+      const openHash = /open=(tools|settings)/.exec(location.hash);
+      if (openHash) {
+        const menu = menus[openHash[1] === "tools" ? 0 : 1];
+        if (menu) { menu.classList.add("open"); menu.querySelector(".menu-btn").setAttribute("aria-expanded", "true"); }
+      }
+
+      // ── Navigation Accueil ⇄ Espace de travail ────────────────────────────
+      // Source de vérité : SESSION.activeMachine (posé par la commande `use`).
+      // On reflète ce ciblage dans la vue, sans toucher au moteur.
+      const body = document.body;
+      const grid = document.getElementById("machines-list");
+      const workTitle = document.getElementById("work-title");
+      const workDiff = document.getElementById("work-diff");
+      const workSteps = document.getElementById("work-steps");
+      const workTimer = document.getElementById("work-timer");
+      const homeCount = document.getElementById("home-count");
+      let uiForceHome = false;
+      let lastActive = null;
+
+      // Re-cibler depuis la grille annule un éventuel « retour » forcé.
+      grid.addEventListener("click", () => { uiForceHome = false; }, true);
+      grid.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") uiForceHome = false;
+      }, true);
+
+      document.getElementById("back-home").addEventListener("click", () => {
+        uiForceHome = true;
+        body.dataset.view = "home";
+      });
+
+      const diffClass = (d) =>
+        d === "Facile" ? "easy" : d === "Moyen" ? "med"
+          : d === "Expert" ? "expert" : d === "Insane" ? "insane" : "hard";
+
+      function fmtTime(id, done) {
+        const tm = (typeof GAME !== "undefined" && GAME.times) ? GAME.times[id] : null;
+        if (!tm) return "";
+        const ms = done ? tm.elapsedMs : (tm.startedAt ? Date.now() - tm.startedAt : 0);
+        if (!ms) return "";
+        return "⏱ " + (typeof formatDuration === "function" ? formatDuration(ms) : Math.round(ms / 1000) + "s");
+      }
+
+      function updateWorkHeader(id) {
+        if (typeof MACHINES === "undefined") return;
+        const m = MACHINES.find((x) => x.id === id);
+        if (!m) return;
+        const p = (GAME.progress && GAME.progress[id]) || {};
+        workTitle.textContent = m.name;
+        workDiff.textContent = (typeof t === "function") ? t("diff." + m.difficulty) : m.difficulty;
+        workDiff.className = "m-diff diff-" + diffClass(m.difficulty);
+        const steps = ["recon", "access", "privesc", "rootFlag"];
+        workSteps.innerHTML = steps
+          .map((s) => `<span class="step ${p[s] ? "on" : ""}"></span>`)
+          .join("");
+        workTimer.textContent = fmtTime(id, !!p.rootFlag);
+      }
+
+      function updateHomeCount() {
+        if (!homeCount || typeof MACHINES === "undefined") return;
+        const total = MACHINES.length;
+        const unlocked = (typeof GAME !== "undefined" && GAME.unlocked) ? GAME.unlocked.length : 0;
+        const done = (typeof GAME !== "undefined" && GAME.progress)
+          ? MACHINES.filter((m) => GAME.progress[m.id] && GAME.progress[m.id].rootFlag).length : 0;
+        const en = (typeof LANG !== "undefined" && LANG === "en");
+        homeCount.textContent = en
+          ? `${unlocked}/${total} targets unlocked · ${done} rooted`
+          : `${unlocked}/${total} cibles débloquées · ${done} rootée${done > 1 ? "s" : ""}`;
+      }
+
+      function syncView() {
+        const active = (typeof SESSION !== "undefined") ? SESSION.activeMachine : null;
+        if (active !== lastActive) { if (active) uiForceHome = false; lastActive = active; }
+        const view = (active && !uiForceHome) ? "work" : "home";
+        body.dataset.view = view;
+        if (view === "work") updateWorkHeader(active);
+        else updateHomeCount();
+      }
+
+      syncView();
+      setInterval(syncView, 500);
+
+      // ── Accueil vivant : compteurs, bouton reprendre, terminal qui tape ────
+      const firstPlayable = () => {
+        if (typeof MACHINES === "undefined") return null;
+        const un = (typeof GAME !== "undefined" && GAME.unlocked) ? GAME.unlocked : [];
+        const inProgress = MACHINES.find((m) => un.includes(m.id) && !(GAME.progress[m.id] && GAME.progress[m.id].rootFlag));
+        return (inProgress || MACHINES.find((m) => un.includes(m.id)) || MACHINES[0] || null);
+      };
+      const resumeBtn = document.getElementById("hero-resume");
+      if (resumeBtn) resumeBtn.addEventListener("click", () => {
+        const m = firstPlayable();
+        if (!m) return;
+        uiForceHome = false;
+        document.getElementById("term-input").value = "use " + m.id;
+        submitInput();
+      });
+      const helpBtn = document.getElementById("hero-help");
+      if (helpBtn) helpBtn.addEventListener("click", () => {
+        document.getElementById("term-input").value = "help";
+        submitInput();
+      });
+
+      // Compteurs qui montent
+      const animateCount = (el, to) => {
+        if (!el) return;
+        to = Math.max(0, to | 0);
+        if (matchMedia("(prefers-reduced-motion: reduce)").matches) { el.textContent = to; return; }
+        const dur = 900, t0 = performance.now();
+        const step = (t) => {
+          const k = Math.min(1, Math.max(0, (t - t0) / dur));
+          const e = 1 - Math.pow(1 - k, 3);
+          el.textContent = Math.max(0, Math.round(to * e));
+          if (k < 1) requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+      };
+      const refreshHero = () => {
+        if (typeof MACHINES === "undefined") return;
+        const total = MACHINES.length;
+        const rooted = MACHINES.filter((m) => GAME.progress[m.id] && GAME.progress[m.id].rootFlag).length;
+        const pts = (typeof GAME !== "undefined") ? (GAME.score || 0) : 0;
+        animateCount(document.getElementById("hs-machines"), total);
+        animateCount(document.getElementById("hs-rooted"), rooted);
+        animateCount(document.getElementById("hs-points"), pts);
+        const lvlEl = document.getElementById("hs-level");
+        if (lvlEl && typeof levelInfo === "function") lvlEl.textContent = "Niv. " + levelInfo(pts).level;
+        const m = firstPlayable();
+        const lbl = resumeBtn && resumeBtn.querySelector("span");
+        if (lbl && m) lbl.textContent = (typeof LANG !== "undefined" && LANG === "en" ? "Resume — " : "Reprendre — ") + m.name;
+      };
+      refreshHero();
+      setTimeout(refreshHero, 400);
+
+      // Terminal du hero : séquence qui se tape en boucle (décoratif)
+      const typingEl = document.getElementById("hero-typing");
+      if (typingEl) {
+        const lines = [
+          "$ nmap -sV 10.10.11.21",
+          "  22/tcp  open  ssh     OpenSSH 8.9p1",
+          "  80/tcp  open  http    nginx 1.18.0",
+          "$ ftp anonymous@10.10.11.21",
+          "  230 Login successful.",
+          "$ ssh svc@10.10.11.21",
+          "  svc@nimbus:~$ sudo -l",
+          "  (ALL) NOPASSWD: /usr/bin/find",
+          "$ find . -exec /bin/sh \\; -quit",
+          "  # id",
+          "  uid=0(root) gid=0(root)",
+          "  # cat /root/root.txt",
+          "  CTF{r00t_d4nc3_1s_r34l}  ✓",
+        ];
+        let li = 0, ci = 0, buf = "";
+        const tick = () => {
+          if (li >= lines.length) { // pause puis reset
+            setTimeout(() => { buf = ""; li = 0; ci = 0; typingEl.textContent = ""; tick(); }, 2600);
+            return;
+          }
+          const line = lines[li];
+          if (ci < line.length) { buf += line[ci++]; typingEl.textContent = buf; setTimeout(tick, 16 + Math.random() * 34); }
+          else { buf += "\n"; li++; ci = 0; typingEl.textContent = buf; typingEl.parentElement.scrollTop = typingEl.parentElement.scrollHeight; setTimeout(tick, 380); }
+        };
+        tick();
+      }
     });
+  </script>
+
+  <script>
+    // ── Séquence de boot (intro "connexion à la cible") ───────────────────
+    (function () {
+      var boot = document.getElementById("boot");
+      if (!boot) return;
+      var log = document.getElementById("boot-log");
+      var fill = document.getElementById("boot-bar-fill");
+      var seen = false;
+      try { seen = sessionStorage.getItem("ctf_boot_v1") === "1"; } catch (e) {}
+      var reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+      var done = function () {
+        boot.classList.add("done");
+        try { sessionStorage.setItem("ctf_boot_v1", "1"); } catch (e) {}
+        setTimeout(function () { boot.remove(); }, 700);
+      };
+      if (seen || reduce) { done(); return; }
+
+      var lines = [
+        { t: "[ CTFLAB ] initialisation du terminal d'attaque\u2026", d: 260 },
+        { t: "[  ok  ] moteur d'exploitation charg\u00e9", d: 200 },
+        { t: "[  ok  ] syst\u00e8me de fichiers virtuel mont\u00e9", d: 200 },
+        { t: "[  ok  ] 12 cibles r\u00e9pertori\u00e9es sur le r\u00e9seau", d: 220 },
+        { t: "[ link ] \u00e9tablissement du lien chiffr\u00e9\u2026", d: 320 },
+        { t: "[  ok  ] acc\u00e8s autoris\u00e9 \u2014 bienvenue, op\u00e9rateur", d: 260 }
+      ];
+      var i = 0, prog = 0;
+      var tick = function () {
+        if (i >= lines.length) { fill.style.width = "100%"; setTimeout(done, 520); return; }
+        log.textContent += (i ? "\n" : "") + lines[i].t;
+        prog = Math.round(((i + 1) / lines.length) * 100);
+        fill.style.width = prog + "%";
+        i++;
+        setTimeout(tick, lines[i - 1].d);
+      };
+      setTimeout(tick, 260);
+      var skip = function () { done(); };
+      boot.addEventListener("click", skip);
+      window.addEventListener("keydown", skip, { once: true });
+    })();
   </script>
 </body>
 </html>

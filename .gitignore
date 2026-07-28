@@ -11,3 +11,6 @@ desktop.ini
 
 # Sauvegardes de jeu exportées localement
 *.json.enc
+
+# captures de revue visuelle
+.shots/

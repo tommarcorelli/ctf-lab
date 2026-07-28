@@ -42,6 +42,14 @@ utilisés sont sauvegardés dans le `localStorage` du navigateur (clé `ctf_lab_
   balaie le **sous-réseau interne** (plusieurs hôtes, dont des leurres) et `arp -a` montre la table ARP.
 - **TEMPEST** (difficile) — CI/CD avec un bucket de déploiement **inscriptible** (`cloudctl cp`) dont le
   contenu est exécuté par le pipeline (RCE) → shell `ci` → sudo GTFOBins (`nmap --interactive`)
+- **PARALLAX** (difficile) — outil d'aperçu de lien vulnérable à une **SSRF** (`/preview?url=`) → fuite
+  d'un rôle IAM puis d'un jeton temporaire via un faux endpoint de métadonnées cloud
+  (`169.254.169.254`) → `cloudctl assume-role` débloque un bucket protégé par rôle → SSH → **capability
+  Linux** `cap_setuid+ep` sur `python3.11` (`getcap`), une alternative au SUID classique
+- **SENTRY** (difficile) — API interne protégée par **JWT**, vulnérable à la faille classique
+  **"alg:none"** (la signature n'est jamais vérifiée si le jeton l'annonce) → un jeton forgé à la main
+  (`base64url`/`base64urld` en pipe) avec un rôle admin fuite des identifiants SSH → sudo GTFOBins sur
+  `vim` (`sudo vim -c ':!/bin/sh'`)
 - **AXIOM** (insane) — logs CI/CD exposés → SSH → appartenance au groupe `docker` (équivalent root via
   montage du disque hôte dans un conteneur)
 
@@ -150,6 +158,39 @@ deux scénarios résolus, le badge **🧱 Ingénieur réseau**. Le 2ᵉ scénari
 l'**ordre des règles** (première correspondance gagne — il faut *insérer* le DROP avant la règle
 ACCEPT). Moteur de règles maison (matching IP/CIDR, proto, port), aucun vrai pare-feu.
 
+## SSRF, métadonnées cloud & capabilities Linux (PARALLAX)
+
+Deux techniques supplémentaires, illustrées par la machine **PARALLAX** :
+
+- **SSRF (Server-Side Request Forgery)** : un endpoint web (`/preview?url=<url>`) va chercher une URL
+  pour le compte du serveur. `curl "<url>?url=<cible>"` déclenche la requête ; seule une cible précise
+  répond utilement (un faux endpoint de métadonnées cloud interne, façon AWS
+  `169.254.169.254/latest/meta-data/...`), toute autre URL renvoie un message générique (trafic sortant
+  réel simulé comme filtré). La métadonnées fuite un rôle IAM puis, une fois interrogée plus
+  précisément, un jeton de sécurité temporaire.
+- **Rôle IAM assumé** : `cloudctl assume-role <token>` échange le jeton fuité contre un rôle actif
+  (`SESSION.cloudRole`) qui débloque les buckets marqués `requiresRole` (ni publics, ni simplement
+  privés — une 3ᵉ politique d'accès pour `cloudctl ls|get`), révélant alors des identifiants SSH.
+- **Capabilities Linux** (`getcap -r /`) : une alternative plus fine au bit SUID classique — une
+  capability comme `cap_setuid+ep` accordée à un interpréteur (`python3.11`) permet de s'attribuer
+  l'uid 0 sans que le binaire soit marqué SUID (donc invisible à `find -perm -4000`).
+
+## JWT "alg:none" (SENTRY)
+
+Une faille réelle et classique des jetons JWT mal implémentés, illustrée par la machine **SENTRY** :
+un jeton a 3 parties séparées par des points (en-tête, charge utile, signature), et certaines
+implémentations sautent totalement la vérification de signature si l'en-tête annonce
+`"alg":"none"`. Concrètement :
+
+- Décoder un segment de jeton : `echo '<segment>' | base64urld`.
+- Forger un jeton à la main, segment par segment : `echo -n '{"alg":"none","typ":"JWT"}' | base64url`
+  puis `echo -n '{"role":"admin", ...}' | base64url`, assemblés en `<en-tête>.<payload>.` (point
+  final = signature vide).
+- L'envoyer avec `curl -H "Authorization: Bearer <jeton>" <url>`.
+
+Aucune cryptographie n'est simulée (pas de vrai HMAC) : c'est fidèle à la faille elle-même, qui ne
+dépend jamais de casser une signature — seulement de convaincre le serveur de ne pas la vérifier.
+
 ## Accessibilité & hors-ligne
 
 Le bouton de thème (🌙/☀️/◐) propose désormais un 3ᵉ thème **contraste élevé**. Le terminal utilise
@@ -175,12 +216,12 @@ qui demandent d'éditer un script (ex : le cron piégeable de CERBERUS).
 
 ## Commandes principales
 
-Recon : `nmap <ip>`, `curl <url>` (GET, ou POST avec `-d "champ=valeur"`), `ftp <ip>`, `nc <ip> <port>` (bannière brute), `nc -lvnp <port>` (écoute, pour attraper une reverse shell si une machine le propose), `cloudctl ls|get|cp` (stockage objet simulé)
-Accès : `ssh user@ip [-p port]`, `curl -F "file=@<webshell>" <url>` (upload sur un formulaire mal filtré), `ssh -L <lport>:<hôte_interne>:<port> user@<pivot>` (tunnel de pivot vers un hôte interne, une fois le pivot rooté)
-Système (Linux) : `ls [-la]`, `cd`, `pwd`, `cat`, `find`, `echo`, `vim <fichier>` (alias `vi`/`nano`), `whoami`, `id`, `groups`, `sudo -l`, `sudo <cmd>`, `crontab -l`, `docker ps`
+Recon : `nmap <ip>`, `curl <url>` (GET, ou POST avec `-d "champ=valeur"`), `ftp <ip>`, `nc <ip> <port>` (bannière brute), `nc -lvnp <port>` (écoute, pour attraper une reverse shell si une machine le propose), `cloudctl ls|get|cp|assume-role` (stockage objet simulé + prise de rôle IAM), `curl "<url>?param=<url_interne>"` (SSRF vers une ressource interne, ex. métadonnées cloud)
+Accès : `ssh user@ip [-p port]`, `curl -F "file=@<webshell>" <url>` (upload sur un formulaire mal filtré), `ssh -L <lport>:<hôte_interne>:<port> user@<pivot>` (tunnel de pivot vers un hôte interne, une fois le pivot rooté), `curl -H "Authorization: Bearer <jwt>" <url>` (jeton d'authentification, répétable)
+Système (Linux) : `ls [-la]`, `cd`, `pwd`, `cat`, `find`, `getcap -r /` (capabilities Linux, alternative au SUID), `echo [-n]`, `vim <fichier>` (alias `vi`/`nano`), `whoami`, `id`, `groups`, `sudo -l`, `sudo <cmd>`, `crontab -l`, `docker ps`
 Système (Windows, sur une machine cible Windows) : `dir`, `type`, `net user`, `net localgroup administrators`,
 `schtasks /query`, `icacls <fichier>` (les alias `ls`/`cat` fonctionnent aussi, comme dans PowerShell)
-Pipes : `grep`, `wc -l`, `sort [-u]`, `head`, `tail`, `cut`, `awk '{print $N}'`
+Pipes : `grep`, `wc -l`, `sort [-u]`, `head`, `tail`, `cut`, `awk '{print $N}'`, `base64url` / `base64urld` (encodage/décodage sans dépendance, pour forger un JWT à la main)
 Méta : `machines`, `use <nom>`, `reset <nom>`, `hint`, `insane [on|off]`, `progress`, `badges`, `records`, `writeup <nom> [--download]`, `export <passphrase>`, `import`, `score`, `help`, `clear`, `exit`
 Jeopardy : `challenges`, `challenge <id>`, `chint <id>`, `submit <id> <flag>`, `hashcat <hash>`, `daily`
 
@@ -248,7 +289,7 @@ importé. `replay clear` remet le compteur à zéro. Zéro dépendance, 100% cô
 Ajoute un objet dans `MACHINES` (`js/machines.js`) avec le même schéma que les machines
 existantes (ports, web, ftp, sshUsers, targetFS, privesc, rootFile, hints). Le moteur
 (`engine.js`) n'a rien à changer tant que le type de privesc reste `sudo-gtfobins`,
-`sudo-direct`, `cron-writable`, `suid-binary`, `schtask-writable` ou `docker-group`.
+`sudo-direct`, `cron-writable`, `suid-binary`, `schtask-writable`, `docker-group` ou `capability`.
 
 Pour une machine web vulnérable à une LFI/SQLi (comme PHANTOM), pas de code moteur à toucher :
 - LFI : ajoute directement la clé `chemin?param=valeur` dans `machine.web`, `curl` la sert telle quelle.
@@ -264,8 +305,21 @@ Pour une machine web vulnérable à une LFI/SQLi (comme PHANTOM), pas de code mo
 - Upload de webshell (comme NEXUS) : ajoute `machine.upload = { formPath, filenameRegex, webshellPath, user }`
   (le `curl -F` accepte un fichier dont le nom matche `filenameRegex`), puis un `machine.altAccess`
   pointant sur `webshellPath` avec `requiresUpload: true` (le webshell renvoie 404 tant qu'on n'a pas uploadé).
+- SSRF (comme PARALLAX) : ajoute `machine.ssrf = { path, param, responses: { "<url_cible>": "<contenu>" }, blockedMsg }`.
+  `curl "<url_machine><path>?<param>=<url_cible>"` renvoie `responses[<url_cible>]` si elle existe,
+  sinon `blockedMsg` — aucune autre cible n'est jamais atteignable (pas de simulation réseau générale).
 - Cloud mal configuré (comme STRATUS) : ajoute `machine.cloud = { provider, buckets: { "<nom>": { public, files } } }`.
   La commande `cloudctl` liste/lit les buckets `public` et refuse les privés — aucun code moteur à toucher.
+  Un bucket peut aussi être protégé par rôle plutôt que public/privé : `{ public: false, requiresRole: "<rôle>", files }`,
+  combiné à `machine.cloud.assumableRole = { role, token }` (typiquement révélé via une SSRF vers des
+  métadonnées cloud). `cloudctl assume-role <token>` échange le jeton contre le rôle actif de la session.
+- Capability Linux (comme PARALLAX) : `privesc = { type: "capability", exploitCmdRegex, enterMsg }` et
+  `targetFS.capabilities = ["<chemin_binaire> = <capability>"]` (affiché par `getcap -r /`) — alternative
+  au bit SUID, avec le même mécanisme d'exploitation par regex exacte que `suid-binary`/`docker-group`.
+- Authentification JWT "alg:none" (comme SENTRY) : ajoute `machine.jwtAuth = { path, header, requireClaim: { key, value }, successBody, missingMsg, deniedMsg }`.
+  Le endpoint accepte `curl -H "Authorization: Bearer <jwt>" <url>` : le jeton n'est validé que si son
+  en-tête décodé porte `"alg":"none"` **et** que la charge utile contient `requireClaim` — jamais de
+  vraie vérification de signature simulée, fidèle à la faille réelle.
 - Machine interne / pivot (comme CITADEL) : mets `internal: true` et `pivot: { via, pivotIp }`. Le moteur
   rend l'IP injoignable (`nmap`/`ssh`/`curl`) tant qu'un tunnel `ssh -L <lport>:<ip_interne>:<port> user@<pivotIp>`
   n'a pas été ouvert — et ce tunnel exige que la machine pivot (`pivotIp`) soit déjà rootée.

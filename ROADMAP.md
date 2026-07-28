@@ -13,18 +13,19 @@ indices à paliers).
 
 ## 🎯 Prochaines priorités (recommandation, ordre effort/valeur croissant)
 
-Vue synthétique de ce qui reste ouvert et vaudrait le coup d'être attaqué ensuite, en
-plus de ce qui vient d'être livré dans les dernières passes (`vim`, `nc` bannière + écoute,
-reverse shell manuel sur MERIDIAN, `validateMachines` en garde-fou de schéma) :
-
-1. **i18n FR/EN** (Phase 3) — gros chantier transverse, à faire une fois le contenu FR
-   stabilisé (sinon double la charge de maintenance à chaque nouvelle machine). **Dernier
-   item de Phase 3 encore ouvert.**
+Vue synthétique de l'état du projet : **toutes les phases planifiées (1 à 8) sont désormais
+terminées** — 14 machines, i18n FR/EN complet, solveur automatique, parser shell, éditeur/générateur
+de machines, attack graph, Blue Team, firewall, phishing, reverse engineering, et la dernière
+vague en date (Phase 8) : SSRF vers métadonnées cloud, rôle IAM assumable et capabilities Linux
+(PARALLAX), puis authentification JWT "alg:none" et vim GTFOBins (SENTRY). Aucun chantier n'est
+bloqué en cours ; les prochaines pistes viendraient d'une nouvelle vague de contenu (Phase 9)
+plutôt que de dette technique.
 
 > ✅ **Phase 2 entièrement terminée** (STRATUS cloud / NEXUS webshell / CITADEL pivot / TEMPEST cloud-RCE, 8 → **12
-> machines**). **Phase 3 quasi bouclée** : solveur automatique (`tools/solve.js`), extraction
-> JSON pure des machines (`tools/export-machines-json.js` → `machines.json`) et **vrai parser
-> shell** (`$VAR`, `$(...)`, redirections `2>`/`&>`) livrés. Il ne reste que l'i18n FR/EN.
+> machines**, puis **13** avec PARALLAX et **14** avec SENTRY en Phase 8). **Phase 3 entièrement
+> terminée** : solveur automatique (`tools/solve.js`), extraction JSON pure des machines
+> (`tools/export-machines-json.js` → `machines.json`), **vrai parser shell** (`$VAR`, `$(...)`,
+> redirections `2>`/`&>`) et **i18n FR/EN** complet, tous livrés.
 
 ---
 
@@ -423,6 +424,41 @@ future revue si tu valides le principe.
 - [x] **Effet visuel de capture de flag** — explosion de particules en Canvas pur au moment
       où le flag root est validé, togglable via le bouton ✨ (FX) dans l'en-tête, avec en
       prime un mode glow/scanlines sur tout le terminal quand les FX sont actives
+
+## 🛰️ Phase 8 — Nouvelles familles de vulnérabilités (vague 4)
+
+- [x] **SSRF vers métadonnées cloud + rôle IAM assumable + capability Linux** — nouvelle
+      machine **PARALLAX** (13ᵉ machine, insérée avant AXIOM) : un outil d'aperçu de lien
+      (`machine.ssrf = { path, param, responses, blockedMsg }`, exposé via `curl "<url>?url=<cible>"`)
+      est vulnérable à une **SSRF**, qui ne peut atteindre qu'un faux endpoint de métadonnées
+      cloud interne (`169.254.169.254`, façon AWS) — toute autre cible renvoie un message
+      générique, pas de simulation réseau générale. La métadonnées fuite le nom d'un rôle IAM
+      puis, une fois interrogée précisément, un jeton de sécurité temporaire. Côté `cloudctl`,
+      un bucket peut désormais être protégé par un **rôle** plutôt que par le seul flag
+      public/privé (`bucket.requiresRole`, `cloud.assumableRole = { role, token }`) : la
+      nouvelle sous-commande **`cloudctl assume-role <token>`** échange le jeton contre un rôle
+      actif (`SESSION.cloudRole`), qui débloque le bucket et révèle des identifiants SSH. Côté
+      privesc, nouveau type **`capability`** : la commande **`getcap -r /`** énumère les
+      capabilities Linux (alternative au bit SUID, invisible à `find -perm -4000`) ; `python3.11`
+      porte `cap_setuid+ep`, exploitable pour s'attribuer l'uid 0. Testé dans `tests/run.js`
+      (SSRF bloquée sur une cible non pertinente, fuite du rôle puis du jeton, bucket à rôle
+      refusé avant `assume-role`, jeton invalide rejeté, fuite des creds après prise de rôle,
+      `getcap` révèle la capability, une commande python3.11 quelconque n'élève pas les
+      privilèges, exploitation complète) et rejoué par `tools/solve.js` (13/13 machines).
+- [x] **JWT "alg:none" + vim GTFOBins** — nouvelle machine **SENTRY** (14ᵉ machine, insérée entre
+      PARALLAX et AXIOM) : une API interne (`machine.jwtAuth = { path, header, requireClaim, successBody,
+      missingMsg, deniedMsg }`) n'accepte un jeton **JWT** que si son en-tête décodé annonce
+      `"alg":"none"` **et** que la charge utile porte le rôle requis — aucune vérification de
+      signature n'est jamais simulée, fidèle à cette faille réelle et classique. Le joueur récupère
+      un jeton de démo (`GET /api/token?user=guest`), le décode et forge le sien à la main via deux
+      nouveaux filtres pipe sans dépendance, **`base64url`**/**`base64urld`** (RFC 4648 §5, réutilisent
+      les helpers déjà éprouvés d'`encodeScenario`/`decodeScenario`), assemblé en
+      `<en-tête>.<payload>.` et envoyé via un nouveau support **`curl -H "<En-tête>: <valeur>"`**
+      (en-têtes HTTP arbitraires, répétables). `echo` gagne le flag `-n` pour construire les segments
+      JSON proprement. Côté privesc, premier usage de **vim** en GTFOBins direct (`sudo vim -c
+      ':!/bin/sh'`, type `sudo-direct`, aucun changement moteur nécessaire). Testé dans `tests/run.js`
+      (refus sans en-tête, refus si rôle insuffisant, refus si l'algorithme n'est pas `none`, encodage
+      manuel des segments vérifié, exploitation complète) et rejoué par `tools/solve.js` (14/14 machines).
 
 ---
 
