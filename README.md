@@ -11,7 +11,7 @@ Aucun build : ouvre simplement `index.html` dans un navigateur.
 ```
 index.html        Page + layout (sidebar machines + terminal)
 css/style.css      Thème sombre / clair / contraste élevé, effets FX
-js/machines.js     Données des 12 machines (fs, services, creds, exploits, indices)
+js/machines.js     Données des 17 machines (fs, services, creds, exploits, indices)
 js/engine.js        Moteur : FS virtuel, commandes, pipes, scoring, badges, records, write-up, sauvegarde
 js/app.js           Liaison DOM <-> moteur (input, prompt, toasts, sidebar, particules, PWA)
 manifest.json      Manifeste PWA (installation, icône, nom)
@@ -33,6 +33,12 @@ utilisés sont sauvegardés dans le `localStorage` du navigateur (clé `ctf_lab_
 - **MERIDIAN** (difficile) — LFI via `?file=` sur un export de rapport → sudo GTFOBins (`python3`)
 - **GLACIER** (expert, **Windows**) — FTP anonyme → SSH (OpenSSH for Windows) → tâche planifiée SYSTEM
   avec script modifiable
+- **AETHER** (moyen) — API de ticketing MongoDB vulnérable à une **injection NoSQL** (opérateur
+  `$ne`/`$gt` glissé dans le body JSON du login, `curl -d`) → fuite d'identifiants SSH → sudo GTFOBins
+  (`taskset 1 /bin/sh`)
+- **ECLIPSE** (difficile) — générateur de rapports vulnérable à une **SSTI** (Server-Side Template
+  Injection, façon Jinja2) : `?name={{7*7}}` confirme l'évaluation côté serveur, puis un gadget
+  `os.popen(...)` avec callback `nc` donne un shell → sudo GTFOBins (`nice /bin/sh`)
 - **STRATUS** (difficile) — bucket de stockage objet public (`cloudctl`) → fuite d'un `deploy.env` →
   SSH → sudo GTFOBins (`env`)
 - **NEXUS** (difficile) — upload de webshell mal filtré (`curl -F` d'un `.php` déguisé) → reverse shell
@@ -40,6 +46,10 @@ utilisés sont sauvegardés dans le `localStorage` du navigateur (clé `ctf_lab_
 - **CITADEL** (expert) — **hôte interne** injoignable directement : pivot via NEXUS rooté (`ssh -L`) →
   SSH sur l'IP interne → sudo GTFOBins (`perl`). Une fois le tunnel établi, `nmap 172.16.20.0/24`
   balaie le **sous-réseau interne** (plusieurs hôtes, dont des leurres) et `arp -a` montre la table ARP.
+- **VESPER** (difficile) — service d'import de documents vulnérable à une **XXE** (XML External
+  Entity) : une entité externe `SYSTEM "file://..."` déclarée dans la DTD d'un document XML
+  (`curl -d '<xml...>'`) fait fuiter le fichier de config du service → identifiants SSH → sudo
+  GTFOBins (`setsid /bin/sh`)
 - **TEMPEST** (difficile) — CI/CD avec un bucket de déploiement **inscriptible** (`cloudctl cp`) dont le
   contenu est exécuté par le pipeline (RCE) → shell `ci` → sudo GTFOBins (`nmap --interactive`)
 - **PARALLAX** (difficile) — outil d'aperçu de lien vulnérable à une **SSRF** (`/preview?url=`) → fuite
@@ -295,6 +305,19 @@ Pour une machine web vulnérable à une LFI/SQLi (comme PHANTOM), pas de code mo
 - LFI : ajoute directement la clé `chemin?param=valeur` dans `machine.web`, `curl` la sert telle quelle.
 - SQLi : ajoute un objet `machine.sqli = { path, injectionRegex, successBody, failBody }`,
   déclenché par `curl -d "champ=valeur" <url>`.
+- Injection NoSQL (comme AETHER) : ajoute `machine.nosqli = { path, injectionRegex, successBody, failBody }`,
+  même mécanique que `sqli` mais pensée pour un body JSON contenant un opérateur MongoDB
+  (`$ne`, `$gt`, `$regex`...) au lieu d'une chaîne littérale — déclenché par `curl -d '<json>' <url>`.
+- SSTI / Server-Side Template Injection (comme ECLIPSE) : ajoute `machine.ssti = { path, param, pocRegex,
+  pocResponse, injectRegex, user }`. `curl "<url><path>?<param>=<valeur>"` renvoie `pocResponse` si la
+  valeur matche `pocRegex` (typiquement une expression de calcul du style `{{7*7}}`, preuve que le moteur
+  de templates évalue l'entrée), sinon déclenche le même mécanisme de callback `nc <ip> <port>` que
+  `altAccess` si `injectRegex` matche (le moteur parse l'IP/port du payload joueur).
+- XXE / XML External Entity (comme VESPER) : ajoute `machine.xxe = { path, secretPath, entityRegex,
+  successBody, notFoundBody, failBody }`. Déclenché par `curl -d '<xml...>' <url>` : `entityRegex` capture
+  le chemin déclaré par l'entité externe (`SYSTEM "file://<chemin>"`) ; s'il correspond exactement à
+  `secretPath`, le moteur renvoie `successBody` (typiquement une fuite de creds), sinon `notFoundBody` si
+  une entité a bien été détectée mais vise un autre fichier, sinon `failBody`.
 - Reverse shell / injection de commande (comme MERIDIAN et PHANTOM) : ajoute
   `machine.altAccess = { path, injectRegex, user }`. `path` est l'endpoint vulnérable (sans
   query), `injectRegex` reconnaît une injection de commande dans la query (ex :

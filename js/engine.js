@@ -1849,6 +1849,9 @@ function agAccessLabel(m) {
   if (m.jwtAuth) return "JWT alg:none forgé";
   if (m.cloud) return Object.values(m.cloud.buckets || {}).some((b) => b.deploy) ? "bucket writable (RCE)" : "bucket public";
   if (m.sqli) return "SQLi bypass login";
+  if (m.nosqli) return "NoSQLi bypass login";
+  if (m.ssti) return "SSTI → RCE";
+  if (m.xxe) return "XXE → fuite de fichier";
   if (m.internal) return "pivot ssh -L";
   if (m.ftp && m.ftp.enabled) return "FTP anon → creds";
   if (m.altAccess) return "reverse shell / creds";
@@ -3152,6 +3155,25 @@ function cmdCurl(args) {
     );
   }
 
+  // XXE (XML External Entity) : un body POST contenant une DTD qui déclare une entité
+  // externe `SYSTEM "file://<chemin>"`. Le "parseur" simulé se contente de vérifier que le
+  // chemin déclaré correspond au fichier secret de la machine -- pas de résolution XML réelle.
+  if (isPost && machine.xxe && u.path === machine.xxe.path) {
+    const m = data.match(machine.xxe.entityRegex);
+    if (!m) return out(machine.xxe.failBody, "t-err");
+    const requestedPath = m[1];
+    if (requestedPath === machine.xxe.secretPath) return out(machine.xxe.successBody, "t-ok");
+    return out(machine.xxe.notFoundBody, "t-err");
+  }
+
+  // Injection NoSQL : un body JSON POST contenant un opérateur de requête MongoDB
+  // (ex. {"$ne": null}) au lieu d'une simple chaîne de caractères. Même détection
+  // volontairement simple que la SQLi ci-dessous : un regex sur le corps envoyé.
+  if (isPost && machine.nosqli && u.path === machine.nosqli.path) {
+    if (machine.nosqli.injectionRegex.test(data)) return out(machine.nosqli.successBody);
+    return out(machine.nosqli.failBody);
+  }
+
   if (isPost) {
     if (!machine.sqli || u.path !== machine.sqli.path) {
       return out(`curl: (22) Erreur HTTP 404 sur ${u.path}`, "t-err");
@@ -3225,6 +3247,52 @@ function cmdCurl(args) {
       const content = sr.responses[target];
       if (content !== undefined) return out(content);
       return out(sr.blockedMsg || "Aperçu indisponible pour cette URL.", "t-hint");
+    }
+  }
+
+  // SSTI (Server-Side Template Injection) : un paramètre est interpolé directement dans
+  // un moteur de templates (façon Jinja2) au lieu d'être traité comme simple variable.
+  // Deux paliers : une expression de calcul confirme l'évaluation côté serveur (PoC), puis
+  // un gadget d'exécution de commande façon `os.popen(...)` avec callback nc, même mécanique
+  // que altAccess (l'IP/port du callback sont parsés depuis le payload du joueur).
+  if (machine.ssti) {
+    const st = machine.ssti;
+    const qIdx = u.path.indexOf("?");
+    const basePath = qIdx >= 0 ? u.path.slice(0, qIdx) : u.path;
+    if (basePath === st.path) {
+      const query = qIdx >= 0 ? u.path.slice(qIdx + 1) : "";
+      const m = query.match(new RegExp(`(?:^|&)${st.param}=(.*)$`));
+      const val = m ? decodeURIComponent(m[1]).trim() : "";
+      if (!val) return out(`usage : curl "http://${u.ip}${st.path}?${st.param}=<valeur>"`, "t-err");
+      if (st.injectRegex.test(val)) {
+        const cb = val.match(/nc\s+(\d+\.\d+\.\d+\.\d+)\s+(\d+)/);
+        if (!cb) {
+          return out("(payload SSTI accepté, mais aucune cible `nc <ip> <port>` reconnue dans le payload)", "t-err");
+        }
+        const cbIp = cb[1];
+        const cbPort = parseInt(cb[2], 10);
+        if (cbIp !== ATTACKER_IP) {
+          return out(
+            `(le callback vise ${cbIp}, or ton IP d'attaquant est ${ATTACKER_IP} — corrige l'adresse dans le payload)`,
+            "t-err",
+          );
+        }
+        if (SESSION.listening !== cbPort) {
+          return out(
+            "(la requête part bien, mais rien ne revient — mets-toi d'abord en écoute avec " +
+              `\`nc -lvnp ${cbPort}\` sur le même port que celui visé par ton payload)`,
+            "t-err",
+          );
+        }
+        SESSION.listening = null;
+        return grantAccess(
+          machine,
+          st.user,
+          `Connexion entrante reçue sur le port ${cbPort} depuis ${machine.ip} !\n`,
+        );
+      }
+      if (st.pocRegex.test(val)) return out(st.pocResponse, "t-ok");
+      return out(`Aperçu du rapport pour : ${val}`, "t-hint");
     }
   }
 

