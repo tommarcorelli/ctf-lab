@@ -11,7 +11,7 @@ Aucun build : ouvre simplement `index.html` dans un navigateur.
 ```
 index.html        Page + layout (sidebar machines + terminal)
 css/style.css      Thème sombre / clair / contraste élevé, effets FX
-js/machines.js     Données des 17 machines (fs, services, creds, exploits, indices)
+js/machines.js     Données des 18 machines (fs, services, creds, exploits, indices)
 js/engine.js        Moteur : FS virtuel, commandes, pipes, scoring, badges, records, write-up, sauvegarde
 js/app.js           Liaison DOM <-> moteur (input, prompt, toasts, sidebar, particules, PWA)
 manifest.json      Manifeste PWA (installation, icône, nom)
@@ -52,6 +52,9 @@ utilisés sont sauvegardés dans le `localStorage` du navigateur (clé `ctf_lab_
   GTFOBins (`setsid /bin/sh`)
 - **TEMPEST** (difficile) — CI/CD avec un bucket de déploiement **inscriptible** (`cloudctl cp`) dont le
   contenu est exécuté par le pipeline (RCE) → shell `ci` → sudo GTFOBins (`nmap --interactive`)
+- **PULSAR** (difficile) — service d'import de configuration vulnérable à une **désérialisation YAML**
+  non sécurisée (tag `!!python/object/apply:os.system [...]` interprété par un chargeur permissif,
+  `curl -d`) → RCE directe (callback `nc`) → sudo GTFOBins (`timeout 7d /bin/sh`)
 - **PARALLAX** (difficile) — outil d'aperçu de lien vulnérable à une **SSRF** (`/preview?url=`) → fuite
   d'un rôle IAM puis d'un jeton temporaire via un faux endpoint de métadonnées cloud
   (`169.254.169.254`) → `cloudctl assume-role` débloque un bucket protégé par rôle → SSH → **capability
@@ -71,6 +74,10 @@ de la progression).
 
 En plus du score, chaque machine terminée peut débloquer des **badges** (🎯 sans indice, ⚡ speedrun
 &lt;5 min, 🏆 perfectionniste, 🌐 tour complet), visibles dans la sidebar ou via la commande `badges`.
+Chaque mini-mode a aussi son propre badge de complétion (🧩 Codebreaker pour Jeopardy, 🛡️ Analyste
+SOC pour Blue Team, 🧱 Ingénieur réseau pour le pare-feu, 📧 Anti-hameçonnage pour le phishing, 🔬
+Reverse engineer, 🧠 Exploiteur pour le buffer overflow) ; les débloquer tous donne le badge capstone
+**👑 Grand chelem**, le vrai « 100% » du jeu.
 Le score se traduit aussi en **niveau/XP** (barre dans l'en-tête, 500 pts par niveau). Chaque flag root
 capturé affiche une petite **fiche CVE/CVSS pédagogique** générée localement, décrivant la technique de
 privesc utilisée. La commande `records` affiche tes **meilleurs temps locaux** par catégorie (Any%,
@@ -98,24 +105,32 @@ l'autre sans backend.
 
 ## Mode Jeopardy
 
-En plus des 12 machines en mode boîte, un mini mode Jeopardy propose 7 défis indépendants
-(Crypto ×4, Forensics ×2, Misc ×1) : `challenges` pour la liste, `challenge <id>` pour l'énoncé,
-`chint <id>` pour des indices progressifs, `submit <id> <flag>` pour valider. Les points s'ajoutent
-au score global (donc au niveau/XP). Le défi "Mot de passe recyclé" s'appuie sur un vrai petit
-casseur de hash simulé (`hashcat <hash>` / `hashcat --list`), avec un algorithme maison fictif
-(hash-VX) — pédagogique, pas un vrai MD5/SHA. Le défi "RSA au rabais" fait factoriser un module
-RSA volontairement minuscule pour retrouver la clé privée. Le défi "Photo de vacances suspecte"
-cache un flag dans un faux champ de métadonnées EXIF (aucun vrai binaire image à parser). La
-commande `daily` met en avant un défi différent chaque jour (seed = date du jour).
+En plus des 18 machines en mode boîte, un mini mode Jeopardy propose 11 défis indépendants
+(Crypto ×4, Forensics ×2, Misc ×1, Stégano ×1, Réseau ×1, Pwn ×1, OSINT ×1) : `challenges` pour la
+liste, `challenge <id>` pour l'énoncé, `chint <id>` pour des indices progressifs, `submit <id> <flag>`
+pour valider. Les points s'ajoutent au score global (donc au niveau/XP). Le défi "Mot de passe
+recyclé" s'appuie sur un vrai petit casseur de hash simulé (`hashcat <hash>` / `hashcat --list`), avec
+un algorithme maison fictif (hash-VX) — pédagogique, pas un vrai MD5/SHA. Le défi "RSA au rabais" fait
+factoriser un module RSA volontairement minuscule pour retrouver la clé privée. Le défi "Photo de
+vacances suspecte" cache un flag dans un faux champ de métadonnées EXIF (aucun vrai binaire image à
+parser). Le défi "Signal capté sur l'antenne" décode un message morse. Le défi "Paquet capturé sur le
+fil" convertit une charge utile réseau hexadécimale en ASCII. Le défi "Compteur qui déborde" illustre
+un débordement d'entier signé sur 8 bits (`int8`, complément à deux) — la même classe de bug que de
+vraies vulnérabilités mémoire, ici sans exécution de code, juste du calcul. Le défi "Signature
+énigmatique" (OSINT) décode une suite de codes ASCII décimaux, avec un clin d'œil au fil narratif
+transversal du lab. La commande `daily` met en avant un défi différent chaque jour (seed = date du
+jour).
 
 ## Mode Blue Team
 
-En complément de l'attaque, un mode **défense** façon SOC : 3 incidents où tu reçois un dump de
-logs (auth.log brute-force SSH, access.log Nginx LFI/path-traversal, scan `sqlmap`) et dois répondre
-à des questions d'analyse. `blueteam` liste les incidents, `incident <id>` affiche le scénario + les
-logs + les questions, `answer <id> <question> <valeur>` soumet une réponse (tolérante à la casse et
-aux espaces, plusieurs formulations acceptées), `bthint <id> <question>` donne un indice. Chaque
-incident entièrement résolu rapporte des points ; les résoudre tous débloque le badge **🛡️ Analyste
+En complément de l'attaque, un mode **défense** façon SOC : 5 incidents où tu reçois un dump de
+logs (auth.log brute-force SSH, access.log Nginx LFI/path-traversal, scan `sqlmap`, résolveur DNS
+avec exfiltration par sous-domaines encodés, journal d'audit `auditd` avec abus sudo/GTFOBins) et
+dois répondre à des questions d'analyse. `blueteam` liste les incidents, `incident <id>` affiche le
+scénario + les logs + les questions, `answer <id> <question> <valeur>` soumet une réponse (tolérante
+à la casse et aux espaces, plusieurs formulations acceptées), `bthint <id> <question>` donne un
+indice. Chaque incident entièrement résolu rapporte des points ; les résoudre tous débloque le
+badge **🛡️ Analyste
 SOC**. Tout est généré en dur (aucun IDS ni backend).
 
 ## Buffer overflow (pédagogique)
@@ -138,35 +153,41 @@ n'est pas atteinte. Un sélecteur permet de basculer entre les machines débloqu
 
 ## Reverse engineering
 
-Un chapitre forensic/malware : 2 faux binaires à analyser (un dropper/C2 `update.bin`, un
-vérificateur de licence `license.bin`). `malware` liste les échantillons, `strings <id>` dump les
-chaînes lisibles (domaine C2, clé, mutex…), `disas <id>` affiche un **désassemblage x86 simplifié**
-maison (mnémoniques en dur commentés : `connect` vers le C2, boucle de déchiffrement XOR, `strcmp`
-sur une clé en dur — aucun vrai moteur de désassemblage). Réponds avec `resolve <id> <question>
-<valeur>` (ex. le domaine C2, la clé XOR, la clé de licence), `rehint <id> <question>` pour un
-indice. Chaque échantillon élucidé rapporte des points ; les deux débloquent le badge **🔬 Reverse
+Un chapitre forensic/malware : 3 faux binaires à analyser (un dropper/C2 `update.bin`, un
+vérificateur de licence `license.bin`, une bombe logique `cleanup.bin`). `malware` liste les
+échantillons, `strings <id>` dump les chaînes lisibles (domaine C2, clé, mutex…), `disas <id>`
+affiche un **désassemblage x86 simplifié** maison (mnémoniques en dur commentés : `connect` vers le
+C2, boucle de déchiffrement XOR, `strcmp` sur une clé en dur, comparaison d'un timestamp `time()` à
+une constante avant un `rm -rf` déclenché en conditions — aucun vrai moteur de désassemblage).
+Réponds avec `resolve <id> <question> <valeur>` (ex. le domaine C2, la clé XOR, la clé de licence, la
+constante epoch qui déclenche la bombe logique), `rehint <id> <question>` pour un indice. Chaque
+échantillon élucidé rapporte des points ; les trois débloquent le badge **🔬 Reverse
 engineer**.
 
 ## Chapitre phishing
 
-Un pendant « boîte mail » du Blue Team : 3 mails à analyser (un « support IT » usurpé, une newsletter
-légitime, une fausse facture en `.exe`). `phishing` (ou `inbox`) liste les mails, `mail <id>` affiche
+Un pendant « boîte mail » du Blue Team : 5 mails à analyser (un « support IT » usurpé, une newsletter
+légitime, une fausse facture en `.exe`, une notification d'outil légitime mais qui pourrait sembler
+suspecte au premier abord, et une fraude au président — BEC — avec un domaine typosquatté).
+`phishing` (ou `inbox`) liste les mails, `mail <id>` affiche
 les en-têtes simulés (From, Reply-To, Return-Path, Received-SPF), le corps, les liens et pièces
 jointes. `report <id> verdict phishing|legitime` classe le mail ; pour un phishing, il faut aussi
 `report <id> indice <mot-clé>` (l'indicateur peut être formulé librement : domaine usurpé, `.ru`, SPF
-fail, urgence, double extension…). `phhint <id> <question>` donne un indice. Chaque mail bien traité
-rapporte des points ; tous les traiter débloque le badge **📧 Anti-hameçonnage**.
+fail, urgence, double extension, typosquat…). `phhint <id> <question>` donne un indice. Chaque mail
+bien traité rapporte des points ; tous les traiter débloque le badge **📧 Anti-hameçonnage**.
 
 ## Pare-feu simulé (iptables)
 
-Deux scénarios défensifs où tu lis et modifies un jeu de règles façon `iptables` pour atteindre des
+Trois scénarios défensifs où tu lis et modifies un jeu de règles façon `iptables` pour atteindre des
 objectifs (durcir le serveur : n'ouvrir que 80/443 + SSH depuis le LAN ; bloquer un attaquant sans
-couper le trafic web). `firewall` liste les scénarios, `firewall <id>` en démarre un (affiche les
+couper le trafic web ; corriger une règle trop permissive pour isoler une base de données). `firewall`
+liste les scénarios, `firewall <id>` en démarre un (affiche les
 règles + une checklist d'objectifs), puis tu joues avec `iptables -L`, `-A`/`-I`/`-D`, `-P INPUT
 ACCEPT|DROP`, `-F`. Les objectifs se cochent en direct ; tout valider rapporte des points et, les
-deux scénarios résolus, le badge **🧱 Ingénieur réseau**. Le 2ᵉ scénario enseigne l'importance de
+trois scénarios résolus, le badge **🧱 Ingénieur réseau**. Le 2ᵉ scénario enseigne l'importance de
 l'**ordre des règles** (première correspondance gagne — il faut *insérer* le DROP avant la règle
-ACCEPT). Moteur de règles maison (matching IP/CIDR, proto, port), aucun vrai pare-feu.
+ACCEPT) ; le 3ᵉ oblige à *supprimer* une règle trop permissive (`-D`) avant d'en ajouter une plus
+stricte. Moteur de règles maison (matching IP/CIDR, proto, port), aucun vrai pare-feu.
 
 ## SSRF, métadonnées cloud & capabilities Linux (PARALLAX)
 
@@ -251,7 +272,7 @@ en **lecture seule** (`export` est déjà la commande de sauvegarde chiffrée, p
 
 Le bouton **🌐** de l'en-tête (ou le lien `index.html#en`) bascule l'interface entre **français et
 anglais** à chaud (choix mémorisé). L'i18n couvre toute l'interface (en-tête, info-bulles, sidebar,
-modales, bannière), l'aide (`help`), les briefings des 12 machines et les messages clés du gameplay
+modales, bannière), l'aide (`help`), les briefings des 18 machines et les messages clés du gameplay
 (cible active, accès, toasts de progression). Les indices détaillés et le lore des machines restent
 en français pour l'instant (l'infrastructure `i18n.js` / `bilang()` permet de les traduire au fil de l'eau).
 
@@ -318,6 +339,12 @@ Pour une machine web vulnérable à une LFI/SQLi (comme PHANTOM), pas de code mo
   le chemin déclaré par l'entité externe (`SYSTEM "file://<chemin>"`) ; s'il correspond exactement à
   `secretPath`, le moteur renvoie `successBody` (typiquement une fuite de creds), sinon `notFoundBody` si
   une entité a bien été détectée mais vise un autre fichier, sinon `failBody`.
+- Désérialisation non sécurisée (comme PULSAR, façon YAML) : ajoute `machine.yamldeser = { path,
+  injectRegex, invalidBody, user }`. Déclenché par `curl -d '<payload>' <url>` : si `injectRegex` matche
+  (typiquement un tag `!!python/object/apply:os.system [...]` contenant `nc <ip> <port>`), déclenche le
+  même mécanisme de callback `nc` que `altAccess`/`ssti` (parsing IP/port depuis le payload joueur),
+  sinon renvoie `invalidBody`. Contrairement à `nosqli`, pas de bypass d'authentification ici : le payload
+  malveillant donne directement une RCE dès qu'il est chargé côté serveur.
 - Reverse shell / injection de commande (comme MERIDIAN et PHANTOM) : ajoute
   `machine.altAccess = { path, injectRegex, user }`. `path` est l'endpoint vulnérable (sans
   query), `injectRegex` reconnaît une injection de commande dans la query (ex :
@@ -356,12 +383,12 @@ tout seul en style Windows.
 
 `node tests/run.js` lance une suite de tests zéro-dépendance (Node uniquement, pas de framework)
 qui charge `machines.js` + `engine.js` dans un contexte isolé et rejoue : le parsing/les pipes,
-l'exploitation complète des 12 machines (recon → accès → privesc → 2 flags chacune), le
-remboursement de `reset`, la résolution des 6 défis Jeopardy et le mode Insane. À lancer après
+l'exploitation complète des 18 machines (recon → accès → privesc → 2 flags chacune), le
+remboursement de `reset`, la résolution des 11 défis Jeopardy et le mode Insane. À lancer après
 toute modification de `engine.js` ou `machines.js` pour éviter une régression silencieuse.
 
 `node tools/solve.js` est un **solveur automatique** (dev only, jamais embarqué dans le jeu) :
-il rejoue la solution officielle des 12 machines dans le vrai moteur et vérifie qu'aucun chemin
+il rejoue la solution officielle des 18 machines dans le vrai moteur et vérifie qu'aucun chemin
 d'exploit n'est cassé (les 5 jalons + le flag root de chaque machine). Code de sortie non-nul
 en cas de régression, donc utilisable en CI. Options : `--verbose` (chaque commande + sa sortie),
 `--walkthrough` (pas-à-pas propre), `--machine <id>` (une seule machine). Utile comme smoke test

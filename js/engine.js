@@ -1003,6 +1003,16 @@ const BADGE_DEFS = [
     scope: "global",
     check: () => !!GAME.stackpwn.solved,
   },
+  {
+    id: "grand_chelem",
+    icon: "👑",
+    label: "Grand chelem",
+    desc: "Débloque tous les autres badges de complétion : machines, Jeopardy, Blue Team, pare-feu, phishing, reverse engineering et buffer overflow.",
+    scope: "global",
+    check: () =>
+      ["completionist", "jeopardy_complete", "blueteam_complete", "firewall_complete", "phishing_complete", "reverse_complete", "stackpwn_complete"]
+        .every((id) => GAME.badges[id]),
+  },
 ];
 function checkGlobalBadges() {
   const earned = [];
@@ -1217,6 +1227,77 @@ const CHALLENGES = [
       "Le texte est simplement inversé caractère par caractère. Lis-le de droite à gauche pour retrouver FLAG{exif_metadonnees_cachees}.",
     ],
   },
+  {
+    id: "morsesignal",
+    title: "Signal capté sur l'antenne du labo",
+    category: "Stégano",
+    points: 60,
+    prompt:
+      "Un vieux récepteur radio du labo a capté un signal répétitif pendant la nuit. Une fois\n" +
+      "retranscrit, ça ressemble à du morse :\n\n" +
+      "  .- -. - . -. -. .\n\n" +
+      "Décode-le lettre par lettre, puis soumets FLAG{mot_en_minuscules}.",
+    answer: "FLAG{antenne}",
+    hints: [
+      "Chaque groupe de points/tirets séparé par un espace représente une lettre en morse.",
+      "A = .-  N = -.  T = -  E = .  — décode les 7 lettres dans l'ordre.",
+      "Le mot obtenu est \"ANTENNE\" — soumets FLAG{antenne} en minuscules.",
+    ],
+  },
+  {
+    id: "hexpayload",
+    title: "Paquet capturé sur le fil",
+    category: "Réseau",
+    points: 70,
+    prompt:
+      "Une capture réseau (façon Wireshark) contient un petit paquet dont la charge utile,\n" +
+      "en hexadécimal, est :\n\n" +
+      "  464c41477b7472616d655f6865787d\n\n" +
+      "Convertis chaque paire d'hexadécimal en caractère ASCII pour retrouver le flag tel quel.",
+    answer: "FLAG{trame_hex}",
+    hints: [
+      "Chaque paire de deux chiffres hexadécimaux (0-9, a-f) code un caractère ASCII.",
+      "46 = 'F', 4c = 'L', 41 = 'A', 47 = 'G', 7b = '{' ... continue la conversion paire par paire.",
+      "Le résultat complet est directement le flag : FLAG{trame_hex}.",
+    ],
+  },
+  {
+    id: "int8wrap",
+    title: "Compteur qui déborde",
+    category: "Pwn",
+    points: 90,
+    prompt:
+      "Un compteur de tentatives de connexion est stocké sur un entier **signé 8 bits** (int8,\n" +
+      "plage -128 à 127 en complément à deux). Il part de 0 et est incrémenté une fois par\n" +
+      "tentative échouée. Après exactement 128 tentatives échouées d'affilée, quelle valeur\n" +
+      "affiche le compteur ?\n\n" +
+      "Soumets FLAG{overflow_<valeur>} avec la valeur signée obtenue (inclus le signe si négatif).",
+    answer: "FLAG{overflow_-128}",
+    hints: [
+      "Un int8 signé va de -128 à 127 : après avoir atteint 127, l'incrément suivant ne peut pas tenir sur 8 bits sans déborder.",
+      "En complément à deux, dépasser la valeur max positive (127) fait \"boucler\" vers la valeur min négative (-128), pas vers 128.",
+      "0 + 128 incréments = débordement d'une unité au-delà de 127 → le compteur affiche -128. Soumets FLAG{overflow_-128}.",
+    ],
+  },
+  {
+    id: "osintcode",
+    title: "Signature énigmatique sur un vieux forum",
+    category: "OSINT",
+    points: 80,
+    prompt:
+      "En fouillant les archives publiques d'un forum professionnel, un profil au pseudonyme\n" +
+      "'rk_ghost' (aucun rapport avec qui que ce soit, évidemment) signe systématiquement ses\n" +
+      "messages avec cette suite de nombres :\n\n" +
+      "  65-85-68-73-84\n\n" +
+      "Convertis chaque nombre décimal en caractère ASCII, assemble le mot obtenu, et soumets\n" +
+      "FLAG{mot_en_minuscules}.",
+    answer: "FLAG{audit}",
+    hints: [
+      "Chaque nombre séparé par un tiret est un code décimal ASCII, un par lettre.",
+      "65 = 'A', 85 = 'U', 68 = 'D'... continue avec les deux derniers nombres.",
+      "Le mot assemblé est \"AUDIT\" — soumets FLAG{audit} en minuscules.",
+    ],
+  },
 ];
 
 // Hash-VX : algorithme maison non cryptographique, uniquement pour le mini-jeu hashcat (pas de vraie sécurité).
@@ -1366,6 +1447,40 @@ const BLUE_INCIDENTS = [
       { id: "technique", prompt: "Technique (sigle) ?", accept: ["sqli", "injectionsql", "sqlinjection", "unionbased"], hint: "`UNION SELECT ... FROM users` dans un paramètre = injection SQL." },
     ],
   },
+  {
+    id: "bt-dns", title: "Résolutions DNS suspectes", points: 220,
+    scenario: "Le résolveur DNS interne journalise des requêtes bizarres depuis un poste du service compta. Extrait de dns.log. Que se passe-t-il ?",
+    log: [
+      "14:02:01 client 10.0.5.44 query: www.google.com A",
+      "14:02:35 client 10.0.5.44 query: outlook.office365.com A",
+      "14:05:12 client 10.0.5.44 query: 6c6561763031.exfil-corp-drop.io A",
+      "14:05:13 client 10.0.5.44 query: 6c6561763032.exfil-corp-drop.io A",
+      "14:05:14 client 10.0.5.44 query: 6c6561763033.exfil-corp-drop.io A",
+      "14:05:16 client 10.0.5.44 query: 6c6561763034.exfil-corp-drop.io A",
+      "14:05:17 client 10.0.5.44 query: 6c6561763035.exfil-corp-drop.io A",
+      "14:06:02 client 10.0.5.44 query: teams.microsoft.com A",
+    ].join("\n"),
+    questions: [
+      { id: "ip", prompt: "IP du poste compromis ?", accept: ["10.0.5.44"], hint: "Toutes les requêtes bizarres viennent de la même IP interne." },
+      { id: "domaine", prompt: "Domaine contrôlé par l'attaquant ?", accept: ["exfil-corp-drop.io", "exfilcorpdrop.io"], hint: "Les sous-domaines à rallonge, en hexadécimal, pointent tous vers le même domaine parent — regarde après le premier point." },
+      { id: "technique", prompt: "Technique (deux mots ou sigle) ?", accept: ["dnstunneling", "exfiltrationdns", "dnsexfiltration", "tunneldns"], hint: "Encoder des données en sous-domaines successifs pour les faire sortir via des requêtes DNS = exfiltration DNS (DNS tunneling)." },
+    ],
+  },
+  {
+    id: "bt-audit", title: "Escalade de privilèges sur srv-app03", points: 220,
+    scenario: "L'EDR a remonté une alerte « suspicious child process » sur `srv-app03`. Extrait du journal d'audit (auditd, format simplifié). Reconstitue ce qu'il s'est passé.",
+    log: [
+      "11:40:02 type=USER_CMD pid=8821 uid=1002(svc-report) cmd=\"sudo -l\"",
+      "11:40:07 type=USER_CMD pid=8825 uid=1002(svc-report) cmd=\"sudo /usr/bin/env /bin/sh\"",
+      "11:40:07 type=USER_START pid=8826 uid=0(root) comm=\"sh\" exe=\"/bin/sh\"",
+      "11:41:15 type=USER_CMD pid=8830 uid=0(root) cmd=\"cat /etc/shadow\"",
+    ].join("\n"),
+    questions: [
+      { id: "compte", prompt: "Compte de service initialement utilisé ?", accept: ["svc-report", "svcreport"], hint: "Regarde l'utilisateur (uid) des deux premières lignes." },
+      { id: "binaire", prompt: "Binaire GTFOBins utilisé pour l'escalade (sans le chemin) ?", accept: ["env"], hint: "La commande sudo lancée juste avant l'ouverture d'un shell root : `sudo /usr/bin/<binaire> /bin/sh`." },
+      { id: "resultat", prompt: "uid obtenu après l'escalade ?", accept: ["root", "0", "uid=0"], hint: "Regarde le uid du process `sh` juste après la commande sudo, puis celui qui lit /etc/shadow." },
+    ],
+  },
 ];
 function btNorm(s) { return String(s || "").trim().toLowerCase().replace(/[\s_\-]/g, ""); }
 function cmdBlueteam() {
@@ -1458,6 +1573,22 @@ const FIREWALL_SCENARIOS = [
     goals: [
       { type: "blocked", proto: "tcp", dport: 80, source: "203.0.113.66", label: "203.0.113.66 bloqué (même sur le port 80)" },
       { type: "open", proto: "tcp", dport: 80, source: "198.51.100.10", label: "HTTP (80/tcp) toujours ouvert pour les autres" },
+    ],
+  },
+  {
+    id: "fw-dmz", title: "Isoler la base de données", points: 220,
+    brief: "La politique par défaut est déjà DROP (bien), mais un stagiaire a ouvert le port de la base de données (5432) à absolument tout le monde par erreur. Corrige le pare-feu : le web (80/443) doit rester accessible à tous, la base (5432) ne doit être accessible que depuis le serveur applicatif (10.0.1.20), et tout le reste doit rester fermé.",
+    policy: { INPUT: "DROP", OUTPUT: "ACCEPT", FORWARD: "DROP" },
+    rules: [
+      { chain: "INPUT", source: "any", proto: "tcp", dport: 80, target: "ACCEPT" },
+      { chain: "INPUT", source: "any", proto: "tcp", dport: 443, target: "ACCEPT" },
+      { chain: "INPUT", source: "any", proto: "tcp", dport: 5432, target: "ACCEPT" },
+    ],
+    goals: [
+      { type: "open", proto: "tcp", dport: 80, source: "198.51.100.20", label: "HTTP (80/tcp) toujours ouvert à tous" },
+      { type: "open", proto: "tcp", dport: 443, source: "198.51.100.20", label: "HTTPS (443/tcp) toujours ouvert à tous" },
+      { type: "open", proto: "tcp", dport: 5432, source: "10.0.1.20", label: "Postgres (5432/tcp) ouvert depuis le serveur applicatif" },
+      { type: "closed", proto: "tcp", dport: 5432, source: "203.0.113.50", label: "Postgres (5432/tcp) fermé depuis l'extérieur" },
     ],
   },
 ];
@@ -1651,6 +1782,31 @@ const PHISH_MAILS = [
       { id: "indice", prompt: "Cite UN indicateur (mot-clé) qui trahit le phishing.", contains: true, accept: ["piecejointe", "piece", "exe", "extension", "executable", "doubleextension", "attachement", "attachment", "spf"], hint: "La pièce jointe `facture.pdf.exe` : double extension, un exécutable déguisé en PDF." },
     ],
   },
+  {
+    id: "mail-vendor", points: 100, phishing: false,
+    from: "Support Zendesk", fromAddr: "notifications@solenne.zendesk.com",
+    replyTo: "notifications@solenne.zendesk.com", returnPath: "<notifications@solenne.zendesk.com>", spf: "pass",
+    subject: "Ticket #8823 mis à jour",
+    date: "mer. 21 janv. 11:20",
+    body: "Bonjour,\nVotre ticket support #8823 (\"Accès VPN lent\") a été mis à jour par notre équipe technique. Consultez la réponse depuis votre espace client habituel, en vous connectant comme d'habitude (aucun lien de connexion n'est fourni dans ce mail).\n\nCordialement,\nL'équipe support",
+    links: [],
+    questions: [
+      { id: "verdict", prompt: "Phishing ou légitime ?", accept: ["legitime", "legit", "légitime", "safe", "ok"], hint: "Sous-domaine cohérent avec un vrai outil de ticketing, SPF pass, aucune demande d'identifiants ni de pièce jointe, aucune urgence : c'est une notification banale." },
+    ],
+  },
+  {
+    id: "mail-ceo", points: 175, phishing: true,
+    from: "Direction Générale", fromAddr: "direction@solenne-holdlngs.com",
+    replyTo: "direction@solenne-holdlngs.com", returnPath: "<direction@solenne-holdlngs.com>", spf: "fail",
+    subject: "Confidentiel — virement urgent avant 17h",
+    date: "ven. 23 janv. 16:02",
+    body: "Bonjour,\nJe suis en réunion et injoignable par téléphone. J'ai besoin que tu effectues un virement de 18 500 € vers un nouveau fournisseur avant 17h aujourd'hui, c'est urgent et strictement confidentiel — n'en parle à personne avant la validation officielle.\n\nMerci de ta discrétion,\nLa Direction",
+    links: [],
+    questions: [
+      { id: "verdict", prompt: "Phishing ou légitime ?", accept: ["phishing"], hint: "Un dirigeant ne demande jamais un virement urgent et secret par mail, hors process habituel." },
+      { id: "indice", prompt: "Cite UN indicateur (mot-clé) qui trahit le phishing.", contains: true, accept: ["typosquat", "domaine", "holdlngs", "urgence", "confidentiel", "confidentialite", "virement", "bec", "fraudeaupresident", "president", "secret"], hint: "Regarde le domaine de très près : « solenne-holdlngs.com » (un « l » à la place du « i »). Combiné à l'urgence et au secret exigé, c'est une fraude au président (BEC) classique." },
+    ],
+  },
 ];
 function cmdPhishing() {
   const lines = ["📧 Chapitre phishing — analyse ta boîte mail :", ""];
@@ -1775,6 +1931,33 @@ const MALWARE_SAMPLES = [
       { id: "faille", prompt: "Pourquoi c'est cassé (un mot / une expression) ?", contains: true, accept: ["endur", "hardcoded", "strcmp", "clenclair", "cleenclair", "comparaison", "motdepasseendur", "cleendur"], hint: "La clé est comparée en clair, codée en dur dans le binaire." },
     ],
   },
+  {
+    id: "timebomb", filename: "cleanup.bin", points: 175,
+    title: "Un script de « nettoyage » programmé qui sent mauvais",
+    strings: [
+      "/var/backups", "rm -rf %s", "libc.so.6", "time", "TARGET_EPOCH=1893456000",
+      "wiping backups...", "condition not met, sleeping",
+    ],
+    disasm: [
+      "0x1300  call  time                    ; heure système actuelle (epoch)",
+      "0x1305  mov   rax, [rip+TARGET_EPOCH]  ; constante embarquée : 1893456000",
+      "0x130c  cmp   rax, rbx",
+      "0x130f  jl    .sleep                   ; si epoch actuel < constante, on attend",
+      "0x1311  lea   rdi, [\"rm -rf %s\"]",
+      "0x1318  lea   rsi, [\"/var/backups\"]",
+      "0x131f  call  system                   ; efface les sauvegardes si la condition est remplie",
+      "0x1324  jmp   .end",
+      "0x1326 .sleep:",
+      "0x1326  lea   rdi, [\"condition not met, sleeping\"]",
+      "0x132d  call  printf",
+      "0x1332 .end:",
+    ],
+    questions: [
+      { id: "trigger", prompt: "Constante epoch qui déclenche l'effacement ?", accept: ["1893456000"], hint: "La constante comparée juste après l'appel à `time` (regarde `strings` aussi, elle y apparaît en clair)." },
+      { id: "action", prompt: "Que fait le programme une fois la condition remplie (résume en un mot / une expression) ?", contains: true, accept: ["rmrf", "rm-rf", "supprimebackups", "effacebackups", "supprimelessauvegardes", "wipe", "deletebackups", "efface"], hint: "Regarde l'argument de `system` : `rm -rf /var/backups`." },
+      { id: "nature", prompt: "Nature de ce programme (un mot / une expression) ?", contains: true, accept: ["bombelogique", "logicbomb", "bombe", "timebomb", "sabotage"], hint: "Un code qui attend une date précise avant de déclencher une action destructrice = bombe logique." },
+    ],
+  },
 ];
 function reSample(idOrFile) {
   return MALWARE_SAMPLES.find((s) => s.id === idOrFile || s.filename === idOrFile);
@@ -1852,6 +2035,7 @@ function agAccessLabel(m) {
   if (m.nosqli) return "NoSQLi bypass login";
   if (m.ssti) return "SSTI → RCE";
   if (m.xxe) return "XXE → fuite de fichier";
+  if (m.yamldeser) return "désérialisation YAML → RCE";
   if (m.internal) return "pivot ssh -L";
   if (m.ftp && m.ftp.enabled) return "FTP anon → creds";
   if (m.altAccess) return "reverse shell / creds";
@@ -2430,10 +2614,14 @@ const BRIEFING_EN = {
   phantom: "A small internal blog CMS, with an admin area whose login form smells bad.",
   meridian: "An internal monitoring platform. The report generator accepts a file path a little too freely.",
   glacier: "An internal Windows file server. OpenSSH is installed for remote admin, and a scheduled task runs as SYSTEM.",
+  aether: "An internal ticketing API, powered by MongoDB. The login form trusts JSON input a little too much.",
+  vesper: "An internal document-import service. It accepts raw XML... and the parser was left on its default configuration, external entities included.",
   stratus: "A DevOps portal that syncs its backups to object storage. The bucket's access policy looks a bit generous.",
   nexus: "A web file manager with an upload form. Validation of uploaded files seems limited to the extension.",
   citadel: "An internal database server, not directly reachable. You must pivot from an already-compromised host on the same network.",
+  eclipse: "An internal report generator. The custom name passed as a parameter gets injected as-is into a server-side template engine.",
   tempest: "A continuous-deployment platform. One of its artifact buckets is not only public... but also writable, and its contents are deployed automatically.",
+  pulsar: "A configuration import service. It accepts YAML files... loaded by a parser that trusts their content a little too much.",
   parallax: "An internal portal that generates previews of shared links (Slack-bot style). The proxy fetching those links seems a bit too trusting about what it's willing to contact.",
   sentry: "An internal admin dashboard protected by an authentication token (JWT). The token verification code smells like legacy that's never been revisited since it shipped.",
   axiom: "An internal CI/CD runner that builds the company's container images. The service account running the pipelines has local access it shouldn't have.",
@@ -3152,6 +3340,37 @@ function cmdCurl(args) {
       `Upload accepté : ${fname}\nFichier enregistré côté serveur : ${up.webshellPath}\n` +
         "(le filtre ne valide que l'extension apparente — un script déguisé passe. À toi de le déclencher.)",
       "t-ok",
+    );
+  }
+
+  // Désérialisation YAML non sécurisée : un body POST contenant un tag
+  // `!!python/object/apply:os.system [...]` interprété par un chargeur YAML permissif.
+  // Même mécanique de callback `nc <ip> <port>` que SSTI/altAccess (parsing IP/port depuis
+  // le payload joueur, vérification de l'IP attaquant et du port en écoute).
+  if (isPost && machine.yamldeser && u.path === machine.yamldeser.path) {
+    const yd = machine.yamldeser;
+    const m = data.match(yd.injectRegex);
+    if (!m) return out(yd.invalidBody, "t-err");
+    const cbIp = m[1];
+    const cbPort = parseInt(m[2], 10);
+    if (cbIp !== ATTACKER_IP) {
+      return out(
+        `(le callback vise ${cbIp}, or ton IP d'attaquant est ${ATTACKER_IP} — corrige l'adresse dans le payload)`,
+        "t-err",
+      );
+    }
+    if (SESSION.listening !== cbPort) {
+      return out(
+        "(le document est bien chargé côté serveur, mais rien ne revient — mets-toi d'abord en écoute avec " +
+          `\`nc -lvnp ${cbPort}\` sur le même port que celui visé par ton payload)`,
+        "t-err",
+      );
+    }
+    SESSION.listening = null;
+    return grantAccess(
+      machine,
+      yd.user,
+      `Connexion entrante reçue sur le port ${cbPort} depuis ${machine.ip} !\n`,
     );
   }
 

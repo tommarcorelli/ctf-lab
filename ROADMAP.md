@@ -14,19 +14,20 @@ indices à paliers).
 ## 🎯 Prochaines priorités (recommandation, ordre effort/valeur croissant)
 
 Vue synthétique de l'état du projet : **toutes les phases planifiées (1 à 9) sont désormais
-terminées** — 17 machines, i18n FR/EN complet, solveur automatique, parser shell, éditeur/générateur
+terminées** — 18 machines, i18n FR/EN complet, solveur automatique, parser shell, éditeur/générateur
 de machines, attack graph, Blue Team, firewall, phishing, reverse engineering, et la dernière
 vague en date (Phase 9) : injection **NoSQL** sur une API de login MongoDB (AETHER), **SSTI**
-(Server-Side Template Injection façon Jinja2) menant à une RCE via callback `nc` (ECLIPSE), et
-**XXE** (XML External Entity) menant à une divulgation de fichier (VESPER) — trois familles de
+(Server-Side Template Injection façon Jinja2) menant à une RCE via callback `nc` (ECLIPSE),
+**XXE** (XML External Entity) menant à une divulgation de fichier (VESPER), et **désérialisation
+YAML non sécurisée** menant à une RCE directe (PULSAR) — quatre familles de
 vulnérabilité inédites dans le lab, chacune avec son propre mécanisme moteur générique
-(`machine.nosqli`, `machine.ssti`, `machine.xxe`) réutilisable par de futures machines. Aucun
-chantier n'est bloqué en cours ; les prochaines pistes viendraient d'une nouvelle vague de contenu
-(Phase 10) plutôt que de dette technique.
+(`machine.nosqli`, `machine.ssti`, `machine.xxe`, `machine.yamldeser`) réutilisable par de futures
+machines. Aucun chantier n'est bloqué en cours ; les prochaines pistes viendraient d'une nouvelle
+vague de contenu (Phase 10) plutôt que de dette technique.
 
 > ✅ **Phase 2 entièrement terminée** (STRATUS cloud / NEXUS webshell / CITADEL pivot / TEMPEST cloud-RCE, 8 → **12
 > machines**, puis **13** avec PARALLAX et **14** avec SENTRY en Phase 8, puis **15** avec AETHER et
-> **16** avec ECLIPSE et **17** avec VESPER en Phase 9). **Phase 3 entièrement
+> **16** avec ECLIPSE, **17** avec VESPER et **18** avec PULSAR en Phase 9). **Phase 3 entièrement
 > terminée** : solveur automatique (`tools/solve.js`), extraction JSON pure des machines
 > (`tools/export-machines-json.js` → `machines.json`), **vrai parser shell** (`$VAR`, `$(...)`,
 > redirections `2>`/`&>`) et **i18n FR/EN** complet, tous livrés.
@@ -502,6 +503,61 @@ future revue si tu valides le principe.
       premier usage de **setsid** en GTFOBins (`sudo setsid /bin/sh`, DSL `spawn` standard). Testé
       dans `tests/run.js` (payload sans entité refusé, entité valide mais mauvais fichier refusée,
       exploitation complète) et rejoué par `tools/solve.js` (17/17 machines).
+- [x] **Extension du mode Jeopardy** — 4 nouveaux défis dans 4 catégories inédites : **Stégano**
+      (décodage morse), **Réseau** (charge utile hexadécimale d'un paquet capturé), **Pwn**
+      (débordement d'entier signé 8 bits en complément à deux, la même classe de bug que de
+      vraies vulnérabilités mémoire) et **OSINT** (décodage de codes ASCII décimaux, avec un
+      clin d'œil au fil narratif du lab). Le mode Jeopardy passe de 7 à 11 défis, toujours sans
+      aucun changement de moteur nécessaire (`CHALLENGES` est une simple liste déclarative).
+      Testé automatiquement par la section générique existante de `tests/run.js` (aucune
+      modification requise, elle itère déjà dynamiquement sur `CHALLENGES`).
+- [x] **Complétude i18n** — traductions anglaises (`BRIEFING_EN`) ajoutées pour AETHER, ECLIPSE et
+      VESPER, avec un nouveau test qui vérifie que chaque machine de `MACHINES` a bien une entrée
+      dans `BRIEFING_EN` (évite un repli silencieux sur le français en mode EN à l'avenir).
+- [x] **Extension du mode Blue Team** — 2 nouveaux incidents SOC, portant le total à 5 : **exfiltration
+      DNS** (résolveur interne journalisant des sous-domaines à rallonge encodés en hexadécimal vers
+      un domaine attaquant — technique de tunneling DNS classique) et **abus sudo/GTFOBins** (journal
+      `auditd` simplifié montrant un compte de service qui obtient un shell root via `sudo env`, en
+      écho direct aux mécaniques de privesc du mode boîte). Aucun changement de moteur nécessaire
+      (`BLUE_INCIDENTS` est une simple liste déclarative, comme `CHALLENGES`) ; testé automatiquement
+      par la section générique existante de `tests/run.js`.
+- [x] **Extension des chapitres phishing / reverse engineering / pare-feu** — 2 mails supplémentaires
+      (`PHISH_MAILS` passe à 5) : une notification d'outil légitime mais qui peut sembler suspecte au
+      premier abord (second exemple de faux positif, en plus de la newsletter) et une fraude au
+      président (BEC) reposant uniquement sur un domaine typosquatté (`solenne-holdlngs.com`, un `l`
+      à la place d'un `i`) — sans lien ni pièce jointe, un vecteur social pur. 1 échantillon
+      supplémentaire (`MALWARE_SAMPLES` passe à 3) : une bombe logique (`cleanup.bin`) qui compare un
+      timestamp `time()` à une constante epoch avant de déclencher un `rm -rf`, un type de
+      désassemblage (comparaison + saut conditionnel) distinct des deux échantillons existants
+      (boucle XOR, `strcmp`). 1 scénario pare-feu supplémentaire (`FIREWALL_SCENARIOS` passe à 3) :
+      corriger une règle `ACCEPT` trop permissive sur un port de base de données en la supprimant
+      (`iptables -D`) avant d'en ajouter une restreinte à une IP précise — une leçon différente de
+      celle sur l'ordre des règles du 2ᵉ scénario. Aucun changement de moteur nécessaire dans les
+      trois cas (listes déclaratives existantes) ; tests hardcodés existants mis à jour en
+      conséquence (ces sections ne sont pas génériques, contrairement à Jeopardy/Blue Team).
+- [x] **Désérialisation non sécurisée (YAML)** — nouvelle machine **PULSAR** (18ᵉ machine, insérée
+      entre TEMPEST et PARALLAX) : un service d'import de configuration (`machine.yamldeser = { path,
+      injectRegex, invalidBody, user }`) charge le document YAML reçu avec un chargeur permissif
+      (façon PyYAML sans `safe_load`) qui interprète un tag `!!python/object/apply:os.system [...]`
+      pour exécuter une commande arbitraire — cousin lisible en texte brut des exploits
+      pickle/Java, sans étape d'encodage binaire nécessaire côté joueur (contrairement à un vrai
+      pickle, qui n'aurait pas été jouable dans un terminal sans commande `base64` intégrée). Même
+      mécanique de callback `nc <ip> <port>` que SSTI/altAccess, mais différence clé avec
+      `nosqli`/`sqli` : le payload donne une RCE directe dès le chargement, pas un bypass
+      d'authentification. Côté privesc, premier usage de **timeout** en GTFOBins (`sudo timeout 7d
+      /bin/sh`, DSL `spawn` avec un `bin` à deux mots comme `taskset 1`). Accès 100% par reverse
+      shell (pas de creds SSH primaires, comme NEXUS/ECLIPSE). Testé dans `tests/run.js` (payload
+      sans tag reconnu refusé, callback refusé sans listener, IP de callback incorrecte rejetée,
+      exploitation complète) et rejoué par `tools/solve.js` (18/18 machines).
+- [x] **Badge capstone « Grand chelem »** — nouveau badge global (👑) qui se débloque quand tous les
+      autres badges de complétion le sont : `completionist`, `jeopardy_complete`,
+      `blueteam_complete`, `firewall_complete`, `phishing_complete`, `reverse_complete`,
+      `stackpwn_complete`. C'est le vrai « 100% » du jeu, tous mini-modes confondus. Testé par un
+      nouveau scénario end-to-end dans `tests/run.js` qui résout littéralement tout (les 18
+      machines, les 11 défis Jeopardy, les 5 incidents Blue Team, les 3 scénarios pare-feu, les 5
+      mails phishing, les 3 échantillons reverse engineering et le défi buffer overflow) dans un
+      seul contexte, puis vérifie que le badge capstone tombe bien à la fin — la meilleure garantie
+      de non-régression globale que le lab puisse avoir.
 
 ---
 

