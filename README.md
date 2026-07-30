@@ -77,7 +77,8 @@ En plus du score, chaque machine terminée peut débloquer des **badges** (🎯 
 Chaque mini-mode a aussi son propre badge de complétion (🧩 Codebreaker pour Jeopardy, 🛡️ Analyste
 SOC pour Blue Team, 🧱 Ingénieur réseau pour le pare-feu, 📧 Anti-hameçonnage pour le phishing, 🔬
 Reverse engineer, 🧠 Exploiteur pour le buffer overflow) ; les débloquer tous donne le badge capstone
-**👑 Grand chelem**, le vrai « 100% » du jeu.
+**👑 Grand chelem**, le vrai « 100% » du jeu — seul badge à recevoir un traitement visuel doré distinct
+(pastille, halo pulsant, toast dédié) pour le distinguer des autres.
 Le score se traduit aussi en **niveau/XP** (barre dans l'en-tête, 500 pts par niveau). Chaque flag root
 capturé affiche une petite **fiche CVE/CVSS pédagogique** générée localement, décrivant la technique de
 privesc utilisée. La commande `records` affiche tes **meilleurs temps locaux** par catégorie (Any%,

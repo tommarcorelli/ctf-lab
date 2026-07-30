@@ -558,6 +558,26 @@ future revue si tu valides le principe.
       mails phishing, les 3 échantillons reverse engineering et le défi buffer overflow) dans un
       seul contexte, puis vérifie que le badge capstone tombe bien à la fin — la meilleure garantie
       de non-régression globale que le lab puisse avoir.
+- [x] **Polish visuel du badge capstone** — traitement distinct pour 👑 Grand chelem, seul badge à en
+      bénéficier : pastille dorée (`var(--amber)`, cohérente avec les thèmes clair/sombre/contraste
+      existants via `color-mix`), léger halo pulsant en mode FX (`@keyframes legendaryPulse`, respecte
+      `prefers-reduced-motion` comme le reste du HUD) et toast dédié à l'unlock (`toast(msg, "legendary")`,
+      nouveau second paramètre optionnel, rétrocompatible avec tous les appels existants). Aucune
+      modification des styles des autres badges ; changement additif, à faible risque, sur un élément
+      entièrement nouveau. Pas de vérification visuelle possible dans cet environnement (pas de
+      Chrome/Chromium disponible ni installable via le réseau autorisé) : la syntaxe CSS a été
+      vérifiée manuellement (accolades équilibrées, spécificité des sélecteurs cohérente avec le
+      reste du fichier) et `node --check` sur les fichiers JS modifiés.
+- [x] **Audit de cohérence + garde-fou de schéma étendu** — passe de vérification systématique sur
+      tout le contenu ajouté cette session (script `node` ad hoc, pas de navigateur nécessaire) :
+      aucun doublon d'id/ip/name sur les 18 machines, aucun doublon d'id sur les 11 défis Jeopardy /
+      5 incidents Blue Team / 5 mails phishing / 3 échantillons reverse / 3 scénarios pare-feu / 11
+      badges, forme des hints/flags des 4 nouvelles machines conforme, aucune regex à risque de
+      backtracking catastrophique, normalisation des réponses (`btNorm`) cohérente entre Blue Team/
+      phishing/reverse. Au passage, `validateMachines()` — jusqu'ici limité à `altAccess` — couvre
+      désormais aussi la complétude de `nosqli`/`ssti`/`xxe`/`yamldeser`, avec un test dédié qui
+      casse volontairement chacun des 4 champs pour confirmer que le garde-fou les détecte bien
+      (et pas seulement qu'il ne plante pas).
 
 ---
 

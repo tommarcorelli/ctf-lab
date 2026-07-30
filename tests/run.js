@@ -546,7 +546,7 @@ section("nc : connexion bannière", () => {
 section("validateMachines : garde-fou de schéma", () => {
   const ctx = freshContext();
   const cleanErrors = get(ctx, "validateMachines(MACHINES)");
-  assertEqual(cleanErrors.length, 0, `les 8 machines réelles ne remontent aucune erreur de schéma (obtenu : ${JSON.stringify(cleanErrors)})`);
+  assertEqual(cleanErrors.length, 0, `les 18 machines réelles ne remontent aucune erreur de schéma (obtenu : ${JSON.stringify(cleanErrors)})`);
 
   const broken = get(ctx, `
     (() => {
@@ -558,6 +558,23 @@ section("validateMachines : garde-fou de schéma", () => {
     })()
   `);
   assert(broken.length >= 3, `une machine volontairement cassée (ip manquante, id en doublon, privesc.type invalide) remonte bien plusieurs erreurs (obtenu ${broken.length})`);
+
+  // Casse volontairement chacun des 4 nouveaux vecteurs d'accès pour confirmer que
+  // validateMachines() les couvre bien (et pas seulement altAccess/sqli comme avant).
+  const brokenVectors = get(ctx, `
+    (() => {
+      const aether = MACHINES.find(m => m.id === "aether");
+      const eclipse = MACHINES.find(m => m.id === "eclipse");
+      const vesper = MACHINES.find(m => m.id === "vesper");
+      const pulsar = MACHINES.find(m => m.id === "pulsar");
+      const errs1 = validateMachines([{ ...aether, nosqli: { ...aether.nosqli, successBody: undefined } }]);
+      const errs2 = validateMachines([{ ...eclipse, ssti: { ...eclipse.ssti, user: undefined } }]);
+      const errs3 = validateMachines([{ ...vesper, xxe: { ...vesper.xxe, secretPath: undefined } }]);
+      const errs4 = validateMachines([{ ...pulsar, yamldeser: { ...pulsar.yamldeser, path: undefined } }]);
+      return errs1.length + errs2.length + errs3.length + errs4.length;
+    })()
+  `);
+  assert(brokenVectors >= 4, `casser nosqli/ssti/xxe/yamldeser un par un remonte bien une erreur à chaque fois (obtenu ${brokenVectors} erreurs cumulées)`);
 });
 
 // ── 11. Reverse shell manuel (nc -lvnp + injection de commande) sur MERIDIAN ──

@@ -1413,6 +1413,18 @@ function validateMachines(machines) {
     if (m.altAccess && (!m.altAccess.path || !(m.altAccess.injectRegex instanceof RegExp) || !m.altAccess.user)) {
       errors.push(`${tag} : "altAccess" incomplet (path/injectRegex/user requis)`);
     }
+    if (m.nosqli && (!m.nosqli.path || !(m.nosqli.injectionRegex instanceof RegExp) || !m.nosqli.successBody || !m.nosqli.failBody)) {
+      errors.push(`${tag} : "nosqli" incomplet (path/injectionRegex/successBody/failBody requis)`);
+    }
+    if (m.ssti && (!m.ssti.path || !m.ssti.param || !(m.ssti.pocRegex instanceof RegExp) || !(m.ssti.injectRegex instanceof RegExp) || !m.ssti.user)) {
+      errors.push(`${tag} : "ssti" incomplet (path/param/pocRegex/injectRegex/user requis)`);
+    }
+    if (m.xxe && (!m.xxe.path || !m.xxe.secretPath || !(m.xxe.entityRegex instanceof RegExp) || !m.xxe.successBody)) {
+      errors.push(`${tag} : "xxe" incomplet (path/secretPath/entityRegex/successBody requis)`);
+    }
+    if (m.yamldeser && (!m.yamldeser.path || !(m.yamldeser.injectRegex instanceof RegExp) || !m.yamldeser.user)) {
+      errors.push(`${tag} : "yamldeser" incomplet (path/injectRegex/user requis)`);
+    }
   });
   return errors;
 }

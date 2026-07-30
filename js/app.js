@@ -666,10 +666,10 @@ function toggleSplit() {
   }
 }
 
-function toast(msg) {
+function toast(msg, extraClass) {
   sideLog("• " + msg, "evt");
   const d = document.createElement("div");
-  d.className = "toast";
+  d.className = "toast" + (extraClass ? " " + extraClass : "");
   d.textContent = msg;
   toastsEl.appendChild(d);
   requestAnimationFrame(() => d.classList.add("show"));
@@ -748,7 +748,7 @@ function renderBadges() {
   BADGE_DEFS.forEach((def) => {
     const on = def.scope === "global" ? !!GAME.badges[def.id] : MACHINES.some((m) => GAME.badges[badgeKey(def, m)]);
     const span = document.createElement("span");
-    span.className = "badge-pill" + (on ? " on" : "");
+    span.className = "badge-pill" + (on ? " on" : "") + (def.id === "grand_chelem" ? " legendary" : "");
     span.title = `${def.label} — ${def.desc}${on ? "" : " (verrouillé)"}`;
     span.setAttribute("aria-label", `Badge ${def.label}${on ? " débloqué" : " verrouillé"}`);
     span.textContent = def.icon;

@@ -1169,6 +1169,33 @@ body[data-view="work"] #home-screen { display: none; }
 :root .badge-pill.on { filter: none; opacity: 1; border-color: var(--neon-grn); box-shadow: 0 0 16px rgba(55,247,154,.4); }
 :root .badge-pill:hover { transform: translateY(-3px) scale(1.08); }
 
+/* Badge capstone (Grand chelem) : traitement distinct, doré, réservé à ce badge unique */
+:root .badge-pill.legendary { border-color: rgba(255,207,74,.35); }
+:root .badge-pill.legendary.on {
+  border-color: var(--amber);
+  background: linear-gradient(145deg, color-mix(in srgb, var(--amber) 22%, var(--bg-elevated-solid)), var(--bg-elevated-solid));
+  box-shadow: 0 0 18px rgba(255,207,74,.45);
+  transform: scale(1.06);
+}
+:root.fx-on .badge-pill.legendary.on { animation: legendaryPulse 2.4s ease-in-out infinite; }
+:root .badge-pill.legendary.on:hover { transform: translateY(-3px) scale(1.14); }
+@keyframes legendaryPulse {
+  0%, 100% { box-shadow: 0 0 18px rgba(255,207,74,.45); }
+  50% { box-shadow: 0 0 28px rgba(255,207,74,.75); }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root.fx-on .badge-pill.legendary.on { animation: none; }
+}
+
+/* Toast spécial pour le déblocage du Grand chelem */
+.toast.legendary {
+  border-color: var(--amber);
+  border-left-color: var(--amber);
+  background: linear-gradient(120deg, color-mix(in srgb, var(--amber) 16%, var(--bg-panel-solid)), var(--bg-panel-solid));
+  box-shadow: 0 6px 24px rgba(255,207,74,.3);
+  font-weight: 600;
+}
+
 /* ---- Entrée animée + petites finitions ----------------------------------- */
 :root .hero-left > * { animation: rise .6s both; }
 .hero-left > *:nth-child(1){animation-delay:.05s}

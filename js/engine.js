@@ -1022,7 +1022,12 @@ function checkGlobalBadges() {
   });
   if (earned.length) {
     persistSave();
-    earned.forEach((def) => toast(`${def.icon} Badge débloqué : ${def.label}`));
+    earned.forEach((def) => {
+      const msg = def.id === "grand_chelem"
+        ? `${def.icon} GRAND CHELEM — 100% du lab débloqué : ${def.label}`
+        : `${def.icon} Badge débloqué : ${def.label}`;
+      toast(msg, def.id === "grand_chelem" ? "legendary" : undefined);
+    });
     if (typeof renderBadges === "function") renderBadges();
   }
 }
