@@ -680,7 +680,7 @@ const KNOWN_COMMANDS = [
   "dir", "type", "net", "schtasks", "icacls", "vim", "nc", "arp", "cloudctl", "generate", "replay", "sandbox",
   "blueteam", "incident", "answer", "bthint", "firewall", "iptables",
   "phishing", "inbox", "mail", "report", "phhint",
-  "malware", "re", "strings", "disas", "disasm", "resolve", "rehint", "graph", "stack", "skills", "whois", "undo", "redo", "profiles", "profile", "split", "tmux",
+  "malware", "re", "strings", "disas", "disasm", "resolve", "rehint", "graph", "stack", "skills", "whois", "undo", "redo", "profiles", "profile", "split", "tmux", "git",
 ];
 const PATH_COMMANDS = ["cd", "ls", "cat", "find", "dir", "type", "icacls", "vim"];
 
@@ -791,6 +791,7 @@ const MAN_PAGES = {
   vi: "voir : man vim",
   nano: "voir : man vim",
   nc: "NAME\n    nc - netcat (client/écoute TCP minimal)\n\nSYNOPSIS\n    nc <ip> <port>\n    nc -lvnp <port>\n\nDESCRIPTION\n    En client, se connecte à un port ouvert d'une machine cible et affiche sa\n    bannière/version. En écoute (-l), se met en attente d'une connexion entrante\n    sur le port donné -- utile pour attraper une reverse shell si une machine\n    cible propose ce chemin (voir ses indices d'accès).",
+  git: "NAME\n    git - navigation d'un dépôt .git exposé (simulé)\n\nSYNOPSIS\n    git log <ip>\n    git show <ip> <hash>\n\nDESCRIPTION\n    Si le dossier .git d'un dépôt a été déployé par erreur avec une\n    application, son historique complet reste consultable -- y compris\n    un secret présent dans un ancien commit et retiré depuis. `git log`\n    liste les commits (hash court + message), `git show` affiche le\n    diff complet d'un commit (les premiers caractères du hash suffisent).\n    Simulation en dur, pas un vrai clone ni un vrai parsing d'objets git.",
 };
 function cmdMan(args) {
   const name = (args[0] || "").toLowerCase();
@@ -2041,6 +2042,8 @@ function agAccessLabel(m) {
   if (m.ssti) return "SSTI → RCE";
   if (m.xxe) return "XXE → fuite de fichier";
   if (m.yamldeser) return "désérialisation YAML → RCE";
+  if (m.jndi) return "injection JNDI (Log4Shell-like) → RCE";
+  if (m.gitLeak) return "fuite .git → creds (historique)";
   if (m.internal) return "pivot ssh -L";
   if (m.ftp && m.ftp.enabled) return "FTP anon → creds";
   if (m.altAccess) return "reverse shell / creds";
@@ -2547,6 +2550,7 @@ function dispatch(cmd, args, rawFirst) {
     case "exit": return cmdExit();
     case "man": return cmdMan(args);
     case "docker": return cmdDocker(args, rawFirst);
+    case "git": return cmdGit(args);
     case "vim":
     case "vi":
     case "nano": return cmdVim(args);
@@ -2629,6 +2633,8 @@ const BRIEFING_EN = {
   pulsar: "A configuration import service. It accepts YAML files... loaded by a parser that trusts their content a little too much.",
   parallax: "An internal portal that generates previews of shared links (Slack-bot style). The proxy fetching those links seems a bit too trusting about what it's willing to contact.",
   sentry: "An internal admin dashboard protected by an authentication token (JWT). The token verification code smells like legacy that's never been revisited since it shipped.",
+  relic: "An internal report-generation service, still in development. The repo's `.git` folder was deployed by mistake along with the application.",
+  echolog: "A centralized logging service for the internal infra. It dutifully logs every request header... including the ones that should never be evaluated.",
   axiom: "An internal CI/CD runner that builds the company's container images. The service account running the pipelines has local access it shouldn't have.",
 };
 function machineBriefing(m) { return (bilang("fr", "en") === "en" && BRIEFING_EN[m.id]) ? BRIEFING_EN[m.id] : m.briefing; }
@@ -2641,7 +2647,7 @@ const HELP_FR =
   "Phishing : phishing (ou inbox), mail <id>, report <id> <question> <valeur>, phhint <id> <question>\n" +
   "Reverse : malware (liste), strings <id>, disas <id>, resolve <id> <question> <valeur>, rehint <id> <question>\n" +
   "Reconnaissance : nmap <ip>, nmap <cidr> (balayage de sous-réseau via un pivot), arp -a, curl <url>, ftp <ip>, nc <ip> <port>, cloudctl ls|get|cp|assume-role\n" +
-  "Accès : ssh <user>@<ip> [-p <port>], curl -F \"file=@<webshell>\" <url> (upload), ssh -L <lport>:<hôte_interne>:<port> <user>@<pivot> (tunnel/pivot), curl \"<url>?param=<url_interne>\" (SSRF), curl -H \"Authorization: Bearer <jwt>\" <url> (jeton d'authentification)\n" +
+  "Accès : ssh <user>@<ip> [-p <port>], curl -F \"file=@<webshell>\" <url> (upload), ssh -L <lport>:<hôte_interne>:<port> <user>@<pivot> (tunnel/pivot), curl \"<url>?param=<url_interne>\" (SSRF), curl -H \"Authorization: Bearer <jwt>\" <url> (jeton d'authentification), curl -H \"<En-tête>: <payload>\" <url> (injection via en-tête, ex. JNDI), git log <ip> / git show <ip> <hash> (dépôt .git exposé)\n" +
   "Système (une fois connecté ou en local) : ls [-la], cd, pwd, cat, find, getcap -r / (capabilities Linux), echo [-n], vim <fichier>, whoami, id, sudo -l, sudo <cmd>, crontab -l, docker ps, undo/redo (annuler/rétablir une modif du FS)\n" +
   "Windows (machine cible Windows) : dir, type, net user, net localgroup administrators, schtasks /query, icacls <fichier>\n" +
   "Filtres en pipe : grep, wc -l, sort [-u], head, tail, cut, awk '{print $N}', base64url / base64urld (encodage sans dépendance)\n" +
@@ -2659,7 +2665,7 @@ const HELP_EN =
   "Phishing : phishing (or inbox), mail <id>, report <id> <question> <value>, phhint <id> <question>\n" +
   "Reverse eng. : malware (list), strings <id>, disas <id>, resolve <id> <question> <value>, rehint <id> <question>\n" +
   "Recon : nmap <ip>, nmap <cidr> (subnet sweep via a pivot), arp -a, curl <url>, ftp <ip>, nc <ip> <port>, cloudctl ls|get|cp|assume-role\n" +
-  "Access : ssh <user>@<ip> [-p <port>], curl -F \"file=@<webshell>\" <url> (upload), ssh -L <lport>:<internal_host>:<port> <user>@<pivot> (tunnel/pivot), curl \"<url>?param=<internal_url>\" (SSRF), curl -H \"Authorization: Bearer <jwt>\" <url> (auth token)\n" +
+  "Access : ssh <user>@<ip> [-p <port>], curl -F \"file=@<webshell>\" <url> (upload), ssh -L <lport>:<internal_host>:<port> <user>@<pivot> (tunnel/pivot), curl \"<url>?param=<internal_url>\" (SSRF), curl -H \"Authorization: Bearer <jwt>\" <url> (auth token), curl -H \"<Header>: <payload>\" <url> (header injection, e.g. JNDI), git log <ip> / git show <ip> <hash> (exposed .git repo)\n" +
   "System (once connected or local) : ls [-la], cd, pwd, cat, find, getcap -r / (Linux capabilities), echo [-n], vim <file>, whoami, id, sudo -l, sudo <cmd>, crontab -l, docker ps, undo/redo (undo/redo an FS change)\n" +
   "Windows (Windows target) : dir, type, net user, net localgroup administrators, schtasks /query, icacls <file>\n" +
   "Pipe filters : grep, wc -l, sort [-u], head, tail, cut, awk '{print $N}', base64url / base64urld (dependency-free encoding)\n" +
@@ -3520,9 +3526,85 @@ function cmdCurl(args) {
     }
   }
 
+  // Injection JNDI façon Log4Shell : un en-tête HTTP arbitraire (ex. User-Agent) est
+  // journalisé par une bibliothèque de logs vulnérable qui évalue les lookups
+  // `${jndi:ldap://...}` qu'elle y trouve au lieu de les traiter comme du texte brut.
+  // Même mécanique de callback `nc <ip> <port>` que SSTI/altAccess (IP/port parsés
+  // depuis le payload joueur) : le lookup JNDI réel ferait charger une classe distante
+  // via LDAP, ici simplifié en un callback direct pour rester jouable sans second
+  // service (pas de vrai serveur LDAP simulé).
+  if (machine.jndi) {
+    const jn = machine.jndi;
+    const qIdx = u.path.indexOf("?");
+    const basePath = qIdx >= 0 ? u.path.slice(0, qIdx) : u.path;
+    if (basePath === jn.path) {
+      const headerName = jn.header || "user-agent";
+      const val = headers[headerName.toLowerCase()] || "";
+      if (!val) {
+        return out(`usage : curl -H "${headerName}: <payload>" http://${u.ip}${jn.path}`, "t-err");
+      }
+      if (!jn.injectRegex.test(val)) {
+        return out(`{"status":"ok","logged":"${headerName}: ${val}"}`, "t-hint");
+      }
+      const cb = val.match(/nc\s+(\d+\.\d+\.\d+\.\d+)\s+(\d+)/);
+      if (!cb) {
+        return out("(lookup JNDI détecté dans les logs, mais aucune cible `nc <ip> <port>` reconnue dans le payload)", "t-err");
+      }
+      const cbIp = cb[1];
+      const cbPort = parseInt(cb[2], 10);
+      if (cbIp !== ATTACKER_IP) {
+        return out(
+          `(le callback vise ${cbIp}, or ton IP d'attaquant est ${ATTACKER_IP} — corrige l'adresse dans le payload)`,
+          "t-err",
+        );
+      }
+      if (SESSION.listening !== cbPort) {
+        return out(
+          "(le lookup est bien évalué côté serveur, mais rien ne revient — mets-toi d'abord en écoute avec " +
+            `\`nc -lvnp ${cbPort}\` sur le même port que celui visé par ton payload)`,
+          "t-err",
+        );
+      }
+      SESSION.listening = null;
+      return grantAccess(
+        machine,
+        jn.user,
+        `Connexion entrante reçue sur le port ${cbPort} depuis ${machine.ip} !\n`,
+      );
+    }
+  }
+
   const content = machine.web[u.path];
   if (content === undefined) return out(`curl: (22) Erreur HTTP 404 sur ${u.path}`, "t-err");
   return out(content);
+}
+// Dépôt `.git` exposé par erreur (déployé avec l'application) : `git log`/`git show`
+// simulés, en dur (pas de vrai parsing d'objets git compressés/zlib) — juste assez pour
+// naviguer un historique de commits et retrouver un secret présent dans un ancien diff,
+// même s'il a été "retiré" par un commit ultérieur (l'historique, lui, ne ment pas).
+function cmdGit(args) {
+  const sub = args[0];
+  if (sub !== "log" && sub !== "show") {
+    return out("usage : git log <ip> | git show <ip> <hash>", "t-err");
+  }
+  const ipArg = args[1] || "";
+  const machine = MACHINES.find((m) => m.ip === ipArg);
+  if (!machine) return out(`fatal: impossible d'accéder au dépôt (${ipArg} injoignable)`, "t-err");
+  if (!GAME.unlocked.includes(machine.id)) return out("fatal: machine verrouillée.", "t-err");
+  if (!isReachable(machine)) return unreachableMsg(machine);
+  if (!machine.gitLeak) return out(`fatal: pas de dépôt \`.git\` exposé sur ${machine.ip}`, "t-err");
+  const gl = machine.gitLeak;
+  if (sub === "log") {
+    const lines = gl.commits.slice().reverse().map((c) => `${c.hash.slice(0, 7)}  ${c.message}`);
+    return out(`historique du dépôt (${gl.commits.length} commits, du plus récent au plus ancien) :\n${lines.join("\n")}`);
+  }
+  const hashArg = (args[2] || "").toLowerCase().trim();
+  if (!hashArg) return out("usage : git show <ip> <hash>", "t-err");
+  const matches = gl.commits.filter((c) => c.hash.startsWith(hashArg));
+  if (!matches.length) return out(`fatal: mauvais objet '${hashArg}'`, "t-err");
+  if (matches.length > 1) return out(`fatal: référence courte ambiguë '${hashArg}'`, "t-err");
+  const c = matches[0];
+  return out(`commit ${c.hash}\nAuthor: dev@${machine.targetFS.hostname}.internal\n\n    ${c.message}\n\n${c.diff}`);
 }
 function cmdFtp(args) {
   const ipArg = args.find((a) => /\d+\.\d+\.\d+\.\d+/.test(a)) || "";

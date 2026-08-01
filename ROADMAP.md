@@ -581,6 +581,45 @@ future revue si tu valides le principe.
 
 ---
 
+## 🕸️ Phase 10 — Nouvelles familles de vulnérabilités (vague 6)
+
+- [x] **Injection JNDI façon Log4Shell** — nouvelle machine **ECHOLOG** (19ᵉ machine, insérée entre
+      SENTRY et RELIC) : un service de journalisation (`machine.jndi = { path, header, injectRegex,
+      user }`) logue tel quel n'importe quel en-tête HTTP (`User-Agent` par défaut). Une bibliothèque
+      de logs non patchée évalue les lookups `${jndi:ldap://...}` qu'elle y trouve au lieu de les
+      traiter comme du texte -- vecteur réel et tristement célèbre (CVE-2021-44228). Simplifié comme
+      les autres RCE du lab : même mécanique de callback `nc <ip> <port>` que SSTI/altAccess/YAML
+      (parsing IP/port depuis le payload joueur), le second service LDAP réel étant remplacé par un
+      callback direct pour rester jouable sans backend. `curl -H` accepte déjà n'importe quel en-tête
+      arbitraire (pas de changement moteur au-delà du nouveau bloc `jndi` dans `cmdCurl`) ; le payload
+      doit être passé entre guillemets simples pour éviter que le shell simulé n'interprète `${...}`
+      comme une expansion de variable (fidèle à un vrai bash). Côté privesc, premier usage de **gdb**
+      en GTFOBins (`sudo gdb -nx -ex '!sh' -ex quit`, premier usage du champ `raw` du DSL d'exploit
+      plutôt que `spawn`/`pager`). Testé dans `tests/run.js` (en-tête absent, payload sans lookup JNDI
+      reconnu, callback refusé sans listener, IP de callback incorrecte rejetée, exploitation complète)
+      et rejoué par `tools/solve.js` (19/19 machines).
+- [x] **Dépôt `.git` exposé** — nouvelle machine **RELIC** (20ᵉ machine, insérée entre ECHOLOG et
+      AXIOM) : le déploiement se fait par simple copie du dossier de travail, dossier `.git` inclus par
+      erreur. Nouveau mécanisme générique et réutilisable par n'importe quelle machine :
+      `machine.gitLeak = { commits: [{ hash, message, diff }, ...] }`, et deux nouvelles commandes
+      simulées `git log <ip>` (liste les commits, hash court + message) et `git show <ip> <hash>`
+      (diff complet d'un commit, préfixe de hash accepté) -- pas un vrai clone ni un vrai parsing
+      d'objets git compressés/zlib, juste assez pour naviguer un historique. Un commit qui s'excuse
+      presque ("sera retiré avant le merge") fuite des identifiants SSH en clair dans son diff, malgré
+      un commit correctif ultérieur dans la liste : l'historique, lui, ne ment pas. Côté privesc,
+      premier usage de **git** lui-même en GTFOBins (`sudo git -p help config`, même mécanique pager
+      que less/man -- un clin d'œil, vu le sujet de la machine). Testé dans `tests/run.js` (liste de
+      commits, `git show` par préfixe de hash, hash ambigu/inconnu refusé, exploitation complète) et
+      rejoué par `tools/solve.js` (20/20 machines).
+- [x] **Extensions transverses** — `validateMachines()` couvre désormais aussi `jndi` et `gitLeak` ;
+      `buildAttackGraphSVG`/`agAccessLabel` étiquette les deux nouveaux vecteurs sur le graphe
+      d'attaque ; `BRIEFING_EN` traduit les deux nouvelles machines ; `HELP_FR`/`HELP_EN` et `man git`
+      documentent les nouvelles commandes ; `git` ajouté à l'autocomplétion Tab. `machines.json`
+      régénéré (20 machines, round-trip vérifié). Score total cohérent après les 20 machines : 16 000
+      pts (20 × 800).
+
+---
+
 ## ❌ Explicitement hors cadre
 
 Des idées plus grosses ont été évoquées à tort dans une version précédente de ce fichier —

